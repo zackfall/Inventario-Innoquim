@@ -20,4 +20,5 @@ from django.urls import path, include
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('innoquim.apps.proveedor.urls')), # API de Proveedor
+    path('api/', include('innoquim.apps.pedido_material.urls')), # API de Pedido_material
 ]
