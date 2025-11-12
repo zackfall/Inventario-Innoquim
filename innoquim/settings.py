@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'innoquim.apps.pedido_item',
     'innoquim.apps.pedido_material',
     'innoquim.apps.producto',
+    'innoquim.apps.proveedor',
     'innoquim.apps.recepcion_item',
     'innoquim.apps.recepcion_material',
     'innoquim.apps.unidad',
