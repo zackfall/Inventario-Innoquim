@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'innoquim.apps.recepcion_item',
     'innoquim.apps.recepcion_material',
     'innoquim.apps.unidad',
+    'innoquim.apps.usuario',
     'rest_framework',
 ]
 
@@ -120,6 +121,8 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+
+AUTH_USER_MODEL = "usuario.Usuario"
 
 
 # Internationalization
