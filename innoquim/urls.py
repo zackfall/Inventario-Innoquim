@@ -2,7 +2,6 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from innoquim.apps.usuario.views import UsuarioViewSet
 from innoquim.apps.unidad.views import UnidadViewSet
 from innoquim.apps.producto.views import ProductoViewSet
 from innoquim.apps.orden_cliente.views import OrdenClienteViewSet
@@ -12,7 +11,6 @@ from innoquim.apps.material_produccion.views import MaterialProduccionViewSet
 
 router = DefaultRouter()
 
-router.register(r"usuarios", UsuarioViewSet, basename="usuario")
 router.register(r"unidades", UnidadViewSet, basename="unidad")
 router.register(r"ordenes-cliente", OrdenClienteViewSet, basename="ordencliente")
 router.register(r"productos", ProductoViewSet, basename="producto")
@@ -33,5 +31,6 @@ urlpatterns = [
     path(
         "api/", include("innoquim.apps.pedido_material.urls")
     ),  # API de Pedido_material
+    path("api/", include("innoquim.apps.usuario.urls")),
     path("api/", include(router.urls)),
 ]

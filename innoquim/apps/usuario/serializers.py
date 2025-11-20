@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, authenticate
 
 Usuario = get_user_model()
 
@@ -38,3 +38,20 @@ class UsuarioSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+
+
+class LoginSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate(self, data):
+        user = authenticate(email=data["email"], password=data["password"])
+
+        if not user:
+            raise serializers.ValidationError("Credenciales inválidas")
+
+        if not user.is_active:
+            raise serializers.ValidationError("Cuenta desactivada")
+
+        data["user"] = user
+        return data
