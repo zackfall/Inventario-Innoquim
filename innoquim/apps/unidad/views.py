@@ -1,3 +1,8 @@
-from django.shortcuts import render
+from rest_framework import viewsets
+from .models import Unidad
+from .serializers import UnidadSerializer
 
-# Create your views here.
+
+class UnidadViewSet(viewsets.ModelViewSet):
+    queryset = Unidad.objects.all()
+    serializer_class = UnidadSerializer
