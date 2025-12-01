@@ -37,11 +37,24 @@ class LoginView(APIView):
 
 class LogoutView(APIView):
     def post(self, request):
-        """Logout usando blacklist"""
+        """Cerrar sesión y agregar refresh token a blacklist"""
         try:
-            refresh = request.data["refresh"]
-            token = RefreshToken(refresh)
+            refresh_token = request.data.get('refresh')
+            if not refresh_token:
+                return Response(
+                    {'error': 'Refresh token es requerido'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            token = RefreshToken(refresh_token)
             token.blacklist()
-            return Response({"detail": "Logout exitoso"})
-        except Exception:
-            return Response({"detail": "Token inválido"}, status=400)
+            
+            return Response(
+                {'message': 'Sesión cerrada exitosamente'},
+                status=status.HTTP_200_OK
+            )
+        except Exception as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )

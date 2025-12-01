@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import get_user_model, authenticate
 
 Usuario = get_user_model()
@@ -55,3 +56,28 @@ class LoginSerializer(serializers.Serializer):
 
         data["user"] = user
         return data
+
+
+class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
+    """Serializer personalizado para incluir datos del usuario en el login"""
+    
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        
+        # Agregar datos del usuario a la respuesta
+        data['user'] = {
+            'id': self.user.id,
+            'email': self.user.email,
+            'username': self.user.username,
+            'name': self.user.name,
+            'rol': self.user.rol,
+        }
+        
+        return data
+
+
+class UsuarioPublicSerializer(serializers.ModelSerializer):
+    """Serializer para datos públicos del usuario"""
+    class Meta:
+        model = Usuario
+        fields = ['id', 'email', 'username', 'name', 'rol']
