@@ -22,8 +22,7 @@ class MateriaPrimaSerializer(serializers.ModelSerializer):
             'unidad_id',
             'nombre_unidad',  # Campo extra para lectura
             'densidad',
-            'stock_minimo',
-            'stock_maximo',
+            'stock',
             'fecha_creacion',
             'fecha_actualizacion',
         ]
