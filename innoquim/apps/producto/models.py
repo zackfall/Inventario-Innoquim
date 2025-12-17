@@ -9,6 +9,8 @@ class Producto(models.Model):
         "unidad.Unidad", on_delete=models.PROTECT, related_name="productos"
     )
     weight = models.DecimalField(max_digits=10, decimal_places=2)
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    stock = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

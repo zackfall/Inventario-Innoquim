@@ -39,7 +39,7 @@ class ProveedorAdmin(admin.ModelAdmin):
     # Organización de campos en secciones
     fieldsets = (
         ('Identificación', {
-            'fields': ('proveedor_id', 'ruc')
+            'fields': ('ruc',)
         }),
         ('Información de la Empresa', {
             'fields': ('nombre_empresa', 'tipo_producto')

@@ -1,7 +1,6 @@
 from django.contrib import admin
 from .models import Cliente
 
-# ...existing code...
 
 @admin.register(Cliente)
 class ClienteAdmin(admin.ModelAdmin):
@@ -23,12 +22,12 @@ class ClienteAdmin(admin.ModelAdmin):
     search_fields = ['cliente_id', 'ruc', 'nombre_empresa', 'nombre_contacto', 'email', 'telefono']
     
     # readonly_fields: evitar edición de campos de auditoría desde el admin
-    readonly_fields = ['fecha_registro', 'fecha_actualizacion']
+    readonly_fields = ['cliente_id', 'fecha_registro', 'fecha_actualizacion']
     
     # fieldsets: organiza el formulario de creación/edición en secciones
     fieldsets = (
         ('Identificación', {
-            'fields': ('cliente_id', 'ruc')
+            'fields': ('ruc',)
         }),
         ('Información de la Empresa', {
             'fields': ('nombre_empresa',)

@@ -15,6 +15,8 @@ class ProductoSerializer(serializers.ModelSerializer):
             "unit",
             "unit_name",
             "weight",
+            "price",
+            "stock",
             "created_at",
             "updated_at",
         ]
