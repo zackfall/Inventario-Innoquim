@@ -26,9 +26,8 @@ class MateriaPrimaSerializer(serializers.ModelSerializer):
             'unidad_id',
             'nombre_unidad',
             'densidad',
-            'stock_minimo',
-            'stock_maximo',
             'costo_promedio',
+            'stock',
             'fecha_creacion',
             'fecha_actualizacion',
         ]

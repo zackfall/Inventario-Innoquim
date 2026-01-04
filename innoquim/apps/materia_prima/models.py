@@ -80,7 +80,7 @@ class MateriaPrima(models.Model):
     )
 
     # =================================================================
-    # PROPIEDADES FISICAS Y STOCK
+    # PROPIEDADES FISICAS
     # =================================================================
 
     # densidad: propiedad fisica opcional
@@ -93,25 +93,16 @@ class MateriaPrima(models.Model):
         verbose_name="Densidad",
         help_text="Densidad de la materia prima en g/cm3 o kg/L (opcional)",
     )
+    # =================================================================
+    # CONTROL DE STOCK (UNICO)
+    # =================================================================
 
-    # stock_minimo: alerta cuando se debe pedir mas
-    # default=0: si no se especifica, asume 0
-    stock_minimo = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
+    # stock: cantidad actual en inventario como entero (unidades/paquetes)
+    # Se usa PositiveIntegerField para garantizar >= 0
+    stock = models.PositiveIntegerField(
         default=0,
-        verbose_name="Stock Minimo",
-        help_text="Cantidad minima requerida en inventario",
-    )
-
-    # stock_maximo: limite superior opcional
-    stock_maximo = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        blank=True,
-        null=True,
-        verbose_name="Stock Maximo",
-        help_text="Cantidad maxima permitida en inventario (opcional)",
+        verbose_name='Stock',
+        help_text='Cantidad actual disponible (unidades/paquetes, entero)'
     )
 
     # costo promedio para que Kardex sepa el valor actual del producto

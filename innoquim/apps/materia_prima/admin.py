@@ -14,8 +14,7 @@ class MateriaPrimaAdmin(admin.ModelAdmin):
         'nombre',
         'categoria_id',
         'unidad_id',
-        'stock_minimo',
-        'stock_maximo',
+        'stock',
         'densidad',
     ]
     
@@ -33,7 +32,7 @@ class MateriaPrimaAdmin(admin.ModelAdmin):
             'fields': ('nombre', 'descripcion', 'categoria_id', 'unidad_id')
         }),
         ('Propiedades', {
-            'fields': ('densidad', 'stock_minimo', 'stock_maximo', 'costo_promedio')
+            'fields': ('densidad', 'stock')
         }),
         ('Auditoria', {
             'fields': ('fecha_creacion', 'fecha_actualizacion'),
