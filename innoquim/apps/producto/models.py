@@ -5,6 +5,14 @@ class Producto(models.Model):
     product_code = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
+    categoria_id = models.ForeignKey(
+        "categoria.Categoria",
+        on_delete=models.PROTECT,
+        related_name="productos",
+        limit_choices_to={'tipo': 'PRODUCT'},
+        verbose_name="Categoría",
+        help_text="Categoría del producto terminado"
+    )
     unit = models.ForeignKey(
         "unidad.Unidad", on_delete=models.PROTECT, related_name="productos"
     )

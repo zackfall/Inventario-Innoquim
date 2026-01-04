@@ -1,5 +1,6 @@
 from django.db import models
 
+from innoquim.apps.categoria.models import Categoria
 from innoquim.apps.unidad.models import Unidad
 
 
@@ -55,6 +56,15 @@ class MateriaPrima(models.Model):
         help_text="Descripcion detallada, especificaciones tecnicas, pureza, etc",
     )
 
+    categoria_id = models.ForeignKey(
+        Categoria,
+        on_delete=models.PROTECT,
+        related_name='materias_primas',
+        limit_choices_to={'tipo': 'RAW_MATERIAL'},
+        verbose_name="Categoria",
+        help_text="Categoria de clasificacion de la materia prima",
+    )
+    
     # =================================================================
     # RELACIONES (FOREIGN KEYS)
     # =================================================================
