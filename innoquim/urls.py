@@ -24,11 +24,15 @@ urlpatterns = [
     path(
         "api/", include("innoquim.apps.inventario_material.urls")
     ),  # API de Inventario_Material
+    path("api/", include("innoquim.apps.inventario.urls")),  # API de Kardex
     path(
         "api/", include("innoquim.apps.pedido_material.urls")
     ),  # API de Pedido_material
     path("api/", include("innoquim.apps.orden_cliente.urls")),  # API de Orden_Cliente
     path("api/", include("innoquim.apps.orden_item.urls")),  # API de Orden_Item
     path("api/", include("innoquim.apps.usuario.urls")),
+    path("api/", include("innoquim.apps.almacen.urls")),
+    path("api/", include("innoquim.apps.recepcion_material.urls")),
+    path("api/", include("innoquim.apps.recepcion_item.urls")),
     path("api/", include(router.urls)),
 ]

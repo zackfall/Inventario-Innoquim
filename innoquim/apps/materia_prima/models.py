@@ -21,13 +21,13 @@ class MateriaPrima(models.Model):
     # CAMPOS PRINCIPALES
     # =================================================================
 
-    # materia_prima_id: PRIMARY KEY autogenerada
+    # materia_prima_id: PRIMARY KEY
     # Formato: MP + 6 digitos (ej: MP000001, MP000002, ...)
     # Se genera automaticamente en save() basandose en el ultimo registro
     materia_prima_id = models.CharField(
         max_length=8,  # MP (2) + 6 digitos = 8 caracteres max
         primary_key=True,
-        editable=False,  # No permitir edicion manual
+        editable=False,
         verbose_name="ID Materia Prima",
         help_text="Codigo unico autogenerado (formato: MP000001)",
     )
@@ -39,7 +39,6 @@ class MateriaPrima(models.Model):
     )
 
     # codigo: Codigo interno/SKU para identificacion rapida
-    # unique=True: evita duplicados de codigos
     codigo = models.CharField(
         max_length=50,
         unique=True,
@@ -47,7 +46,6 @@ class MateriaPrima(models.Model):
         help_text="Codigo interno/SKU de la materia prima (ej: AC-SUL-98)",
     )
 
-    # descripcion: campo opcional para especificaciones tecnicas
     descripcion = models.TextField(
         blank=True,
         null=True,
@@ -60,8 +58,6 @@ class MateriaPrima(models.Model):
     # =================================================================
 
     # unidad_id: FK a tabla unidad
-    # on_delete=PROTECT: no permite borrar unidad si tiene materias primas asociadas
-    # Razon: protege la integridad de datos (evita quedarse sin unidad de referencia)
     unidad_id = models.ForeignKey(
         Unidad,
         on_delete=models.PROTECT,
@@ -74,7 +70,6 @@ class MateriaPrima(models.Model):
     # =================================================================
 
     # densidad: propiedad fisica opcional
-    # max_digits=10, decimal_places=4: permite valores como 1.8400 o 1234.5678
     densidad = models.DecimalField(
         max_digits=10,
         decimal_places=4,
@@ -117,12 +112,10 @@ class MateriaPrima(models.Model):
     # CAMPOS DE AUDITORIA (automaticos)
     # =================================================================
 
-    # auto_now_add=True: se llena SOLO al crear el registro
     fecha_creacion = models.DateTimeField(
         auto_now_add=True, verbose_name="Fecha de Creacion"
     )
 
-    # auto_now=True: se actualiza CADA VEZ que se modifica el registro
     fecha_actualizacion = models.DateTimeField(
         auto_now=True, verbose_name="Ultima Actualizacion"
     )
@@ -174,4 +167,3 @@ class MateriaPrima(models.Model):
 
         # Llamar al save() original de Django
         super().save(*args, **kwargs)
-
