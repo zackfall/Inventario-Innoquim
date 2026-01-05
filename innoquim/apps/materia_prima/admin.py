@@ -25,11 +25,8 @@ class MateriaPrimaAdmin(admin.ModelAdmin):
     readonly_fields = ['materia_prima_id', 'fecha_creacion', 'fecha_actualizacion']
     
     fieldsets = (
-        ('Identificacion', {
-            'fields': ('materia_prima_id', 'codigo')
-        }),
         ('Informacion General', {
-            'fields': ('nombre', 'descripcion', 'categoria_id', 'unidad_id')
+            'fields': ('codigo', 'nombre', 'descripcion', 'categoria_id', 'unidad_id')
         }),
         ('Propiedades', {
             'fields': ('densidad', 'stock')
