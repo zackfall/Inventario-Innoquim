@@ -104,6 +104,26 @@ class MateriaPrima(models.Model):
         verbose_name='Stock',
         help_text='Cantidad actual disponible (unidades/paquetes, entero)'
     )
+    
+    # stock_minimo: alerta cuando se debe pedir mas
+    # default=0: si no se especifica, asume 0
+    stock_minimo = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=0,
+        verbose_name="Stock Minimo",
+        help_text="Cantidad minima requerida en inventario",
+    )
+
+    # stock_maximo: limite superior opcional
+    stock_maximo = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        verbose_name="Stock Maximo",
+        help_text="Cantidad maxima permitida en inventario (opcional)",
+    )
 
     # costo promedio para que Kardex sepa el valor actual del producto
     costo_promedio = models.DecimalField(

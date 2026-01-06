@@ -8,8 +8,8 @@ class MateriaPrimaSerializer(serializers.ModelSerializer):
     Convierte objetos Python <-> JSON para la API REST.
     """
     
+    # Campos adicionales de solo lectura
     nombre_unidad = serializers.CharField(source='unidad_id.nombre', read_only=True)
-    
     nombre_categoria = serializers.CharField(source='categoria_id.nombre', read_only=True)
     tipo_categoria = serializers.CharField(source='categoria_id.get_tipo_display', read_only=True)
     
@@ -20,14 +20,16 @@ class MateriaPrimaSerializer(serializers.ModelSerializer):
             'nombre',
             'codigo',
             'descripcion',
-            'categoria_id',           
-            'nombre_categoria',       
-            'tipo_categoria',         
+            'categoria_id',
+            'nombre_categoria',
+            'tipo_categoria',
             'unidad_id',
             'nombre_unidad',
             'densidad',
-            'costo_promedio',
-            'stock',
+            'stock',             
+            'stock_minimo',       
+            'stock_maximo',       
+            'costo_promedio',    
             'fecha_creacion',
             'fecha_actualizacion',
         ]
