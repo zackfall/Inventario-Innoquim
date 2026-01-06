@@ -48,6 +48,34 @@ services:
       - db
       - redis
 
+  # ===================================================================
+  # SERVICIO DE GESTION DE ARCHIVOS
+  # ===================================================================
+  file-manager:
+    build:
+      context: ./file-manager-service
+      dockerfile: Dockerfile
+    container_name: innoquim-file-manager
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - GOOGLE_CREDENTIALS_PATH=/app/credentials/google-drive-credentials.json
+      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
+    volumes:
+      - ./file-manager-service:/app
+      - ./file-manager-service/credentials:/app/credentials:ro
+      - file-manager-temp:/app/temp_uploads
+    depends_on:
+      - web
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
 volumes:
   postgres_data:
   redis_data:
+  file-manager-temp:  
