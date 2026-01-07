@@ -1,48 +1,73 @@
 """
-Servicio para interactuar con Google Drive API.
-Permite subir, descargar, listar y eliminar archivos.
+Servicio para interactuar con Google Drive API usando OAuth 2.0.
+Compatible con cuentas personales de Google.
 """
 
 import os
-from google.oauth2 import service_account
+import io
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from googleapiclient.errors import HttpError
-import io
 
 
 class GoogleDriveService:
     """
-    Clase para gestionar archivos en Google Drive.
-    
-    Uso:
-    - Subir archivos PDF
-    - Descargar archivos
-    - Listar archivos de la carpeta
-    - Eliminar archivos
+    Clase para gestionar archivos en Google Drive usando OAuth 2.0.
+    Compatible con cuentas personales de Google.
     """
     
-    def __init__(self, credentials_path: str, folder_id: str):
+    # Scope necesario para crear y gestionar archivos
+    SCOPES = ['https://www.googleapis.com/auth/drive.file']
+    
+    def __init__(self, credentials_path: str, token_path: str, folder_id: str):
         """
-        Inicializa el servicio de Google Drive.
+        Inicializa el servicio de Google Drive con OAuth 2.0.
         
         Args:
-            credentials_path: Ruta al archivo JSON de credenciales
-            folder_id: ID de la carpeta en Google Drive donde se guardan los PDFs
+            credentials_path: Ruta al archivo JSON de credenciales OAuth 2.0
+            token_path: Ruta donde se guardará el token de autenticación
+            folder_id: ID de la carpeta en Google Drive
         """
         self.folder_id = folder_id
+        self.credentials_path = credentials_path
+        self.token_path = token_path
+        self.credentials = None
+        self.service = None
         
-        # Escopos necesarios para Google Drive API
-        # 'drive.file': permite crear y gestionar archivos
-        SCOPES = ['https://www.googleapis.com/auth/drive.file']
+        self._authenticate()
+    
+    def _authenticate(self):
+        """
+        Autentica con Google Drive usando OAuth 2.0.
+        Si ya existe un token válido, lo usa. Si no, inicia el flujo OAuth.
+        """
+        creds = None
         
-        # Autenticar con Service Account
-        self.credentials = service_account.Credentials.from_service_account_file(
-            credentials_path,
-            scopes=SCOPES
-        )
+        # El token.json almacena los tokens de acceso y actualización
+        if os.path.exists(self.token_path):
+            creds = Credentials.from_authorized_user_file(self.token_path, self.SCOPES)
         
-        # Crear cliente de Google Drive API
+        # Si no hay credenciales válidas, solicitar login
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                # Refrescar token expirado
+                creds.refresh(Request())
+            else:
+                # Iniciar flujo OAuth
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    self.credentials_path, self.SCOPES
+                )
+                # Esto abrirá el navegador para que autorices la app
+                creds = flow.run_local_server(port=0)
+            
+            # Guardar credenciales para la próxima vez
+            with open(self.token_path, 'w') as token:
+                token.write(creds.to_json())
+        
+        self.credentials = creds
         self.service = build('drive', 'v3', credentials=self.credentials)
     
     def upload_file(self, file_path: str, file_name: str) -> dict:
@@ -51,19 +76,17 @@ class GoogleDriveService:
         
         Args:
             file_path: Ruta local del archivo a subir
-            file_name: Nombre que tendra el archivo en Drive
+            file_name: Nombre que tendrá el archivo en Drive
         
         Returns:
-            dict con 'id' (ID del archivo en Drive) y 'webViewLink' (URL)
+            dict con 'id', 'webViewLink' y 'webContentLink'
         """
         try:
-            # Metadatos del archivo
             file_metadata = {
                 'name': file_name,
-                'parents': [self.folder_id]  # Subir a la carpeta especifica
+                'parents': [self.folder_id]
             }
             
-            # Subir archivo
             media = MediaFileUpload(
                 file_path,
                 mimetype='application/pdf',
@@ -76,7 +99,7 @@ class GoogleDriveService:
                 fields='id, webViewLink, webContentLink'
             ).execute()
             
-            # Hacer el archivo publico para poder descargarlo
+            # Hacer el archivo público
             self.service.permissions().create(
                 fileId=file.get('id'),
                 body={'type': 'anyone', 'role': 'reader'}
@@ -101,7 +124,7 @@ class GoogleDriveService:
             destination_path: Ruta local donde guardar el archivo
         
         Returns:
-            True si se descargo exitosamente, False si hubo error
+            True si se descargó exitosamente
         """
         try:
             request = self.service.files().get_media(fileId=file_id)
@@ -124,7 +147,7 @@ class GoogleDriveService:
         Lista los archivos de la carpeta en Google Drive.
         
         Args:
-            page_size: Numero maximo de archivos a listar
+            page_size: Número máximo de archivos a listar
         
         Returns:
             Lista de archivos con sus metadatos
@@ -152,7 +175,7 @@ class GoogleDriveService:
             file_id: ID del archivo a eliminar
         
         Returns:
-            True si se elimino exitosamente, False si hubo error
+            True si se eliminó exitosamente
         """
         try:
             self.service.files().delete(fileId=file_id).execute()
@@ -164,7 +187,7 @@ class GoogleDriveService:
     
     def get_file_info(self, file_id: str) -> dict:
         """
-        Obtiene informacion de un archivo.
+        Obtiene información de un archivo.
         
         Args:
             file_id: ID del archivo

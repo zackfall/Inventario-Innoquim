@@ -21,29 +21,31 @@ load_dotenv()
 # Inicializar FastAPI
 app = FastAPI(
     title="Innoquim File Manager Service",
-    description="Servicio de gestion de archivos PDF con Google Drive",
+    description="Servicio de gestión de archivos PDF con Google Drive",
     version="1.0.0"
 )
 
-# Configurar CORS para permitir peticiones desde el frontend
+# Configurar CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En produccion, especificar el dominio del frontend
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Inicializar servicio de Google Drive
-CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', 'credentials/google-drive-credentials.json')
+# Configuración de Google Drive OAuth
+CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', 'credentials/oauth-credentials.json')
+TOKEN_PATH = os.getenv('GOOGLE_TOKEN_PATH', 'credentials/token.json')
 FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
 
 if not FOLDER_ID:
-    raise ValueError("GOOGLE_DRIVE_FOLDER_ID no esta configurado en .env")
+    raise ValueError("GOOGLE_DRIVE_FOLDER_ID no está configurado en .env")
 
-drive_service = GoogleDriveService(CREDENTIALS_PATH, FOLDER_ID)
+# Inicializar servicio (cambiado para OAuth)
+drive_service = GoogleDriveService(CREDENTIALS_PATH, TOKEN_PATH, FOLDER_ID)
 
-# Carpeta temporal para guardar archivos antes de subirlos
+# Carpeta temporal
 TEMP_DIR = "temp_uploads"
 os.makedirs(TEMP_DIR, exist_ok=True)
 
@@ -63,7 +65,7 @@ class ArchivoResponse(BaseModel):
 
 
 class ArchivoInfo(BaseModel):
-    """Modelo de informacion de archivo"""
+    """Modelo de información de archivo"""
     id: str
     nombre: str
     tamaño: Optional[int] = None
@@ -77,17 +79,18 @@ class ArchivoInfo(BaseModel):
 
 @app.get("/")
 async def root():
-    """Endpoint raiz para verificar que el servicio esta funcionando"""
+    """Endpoint raíz"""
     return {
         "service": "Innoquim File Manager",
         "status": "running",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "auth_type": "OAuth 2.0"
     }
 
 
 @app.get("/health")
 async def health_check():
-    """Endpoint de health check"""
+    """Health check"""
     return {"status": "healthy"}
 
 
@@ -99,36 +102,22 @@ async def upload_file(
 ):
     """
     Sube un archivo PDF a Google Drive.
-    
-    Args:
-        file: Archivo PDF a subir
-        tipo_reporte: Tipo de reporte (inventario, clientes, etc)
-        descripcion: Descripcion opcional del reporte
-    
-    Returns:
-        Informacion del archivo subido
     """
-    # Validar que sea un PDF
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Solo se permiten archivos PDF")
     
     try:
-        # Generar nombre unico para el archivo temporal
         temp_filename = f"{uuid.uuid4()}_{file.filename}"
         temp_path = os.path.join(TEMP_DIR, temp_filename)
         
-        # Guardar archivo temporalmente
         with open(temp_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
         
-        # Subir a Google Drive
         result = drive_service.upload_file(temp_path, file.filename)
         
-        # Eliminar archivo temporal
         os.remove(temp_path)
         
-        # Preparar respuesta
         return ArchivoResponse(
             archivo_id=result['id'],
             nombre=file.filename,
@@ -144,12 +133,7 @@ async def upload_file(
 
 @app.get("/api/archivos/list")
 async def list_files():
-    """
-    Lista todos los archivos en Google Drive.
-    
-    Returns:
-        Lista de archivos con sus metadatos
-    """
+    """Lista todos los archivos"""
     try:
         files = drive_service.list_files()
         
@@ -173,15 +157,7 @@ async def list_files():
 
 @app.get("/api/archivos/{file_id}/info")
 async def get_file_info(file_id: str):
-    """
-    Obtiene informacion detallada de un archivo.
-    
-    Args:
-        file_id: ID del archivo en Google Drive
-    
-    Returns:
-        Informacion del archivo
-    """
+    """Obtiene información de un archivo"""
     try:
         file_info = drive_service.get_file_info(file_id)
         
@@ -196,20 +172,12 @@ async def get_file_info(file_id: str):
 
 @app.delete("/api/archivos/{file_id}")
 async def delete_file(file_id: str):
-    """
-    Elimina un archivo de Google Drive.
-    
-    Args:
-        file_id: ID del archivo a eliminar
-    
-    Returns:
-        Confirmacion de eliminacion
-    """
+    """Elimina un archivo"""
     try:
         success = drive_service.delete_file(file_id)
         
         if not success:
-            raise HTTPException(status_code=404, detail="Archivo no encontrado o error al eliminar")
+            raise HTTPException(status_code=404, detail="Archivo no encontrado")
         
         return {"message": "Archivo eliminado exitosamente", "file_id": file_id}
     
