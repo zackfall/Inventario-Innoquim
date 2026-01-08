@@ -44,6 +44,7 @@ services:
       - .env
     environment:
       - DATABASE_URL=postgres://${USER}:${PASSWORD}@db:${PORT}/${NAME}
+      - FILE_MANAGER_URL=http://localhost:8001
     depends_on:
       - db
       - redis
@@ -64,7 +65,7 @@ services:
       - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
     volumes:
       - ./file-manager-service:/app
-      - ./file-manager-service/credentials:/app/credentials:ro
+      - ./file-manager-service/credentials:/app/credentials
       - file-manager-temp:/app/temp_uploads
     depends_on:
       - web
