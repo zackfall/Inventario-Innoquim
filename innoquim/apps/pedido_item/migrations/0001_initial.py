@@ -9,17 +9,17 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ('almacen', '0001_initial'),
+        ('unidad', '0001_initial'),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='RecepcionMaterial',
+            name='PedidoItem',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('fecha_recepcion', models.DateTimeField(auto_now_add=True)),
-                ('observaciones', models.TextField(blank=True, null=True)),
-                ('id_almacen', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='recepciones_material', to='almacen.almacen')),
+                ('cantidad_solicitada', models.IntegerField()),
+                ('cantidad_recibida', models.IntegerField()),
+                ('id_unidad_medida', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='items_pedido', to='unidad.unidad')),
             ],
         ),
     ]
