@@ -47,7 +47,6 @@ INSTALLED_APPS = [
     "innoquim.apps.usuario",
     "innoquim.apps.almacen",
     "innoquim.apps.cliente",
-    "innoquim.apps.entrega",
     "innoquim.apps.inventario_material",
     "innoquim.apps.inventario",
     "innoquim.apps.lote_produccion",
