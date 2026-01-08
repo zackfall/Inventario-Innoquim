@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     "django_filters",
     "innoquim.apps.usuario",
     "innoquim.apps.almacen",
+    "innoquim.apps.archivos",
     "innoquim.apps.categoria",
     "innoquim.apps.cliente",
     "innoquim.apps.entrega",

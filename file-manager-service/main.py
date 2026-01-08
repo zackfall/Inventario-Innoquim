@@ -35,7 +35,7 @@ app.add_middleware(
 )
 
 # Configuración de Google Drive OAuth
-CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', 'credentials/oauth-credentials.json')
+CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', 'credentials/google-drive-credentials.json')
 TOKEN_PATH = os.getenv('GOOGLE_TOKEN_PATH', 'credentials/token.json')
 FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
 

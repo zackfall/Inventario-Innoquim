@@ -1,5 +1,5 @@
 from django.db import models
-from django.contrib.auth.models import User
+from django.conf import settings
 
 
 class Archivo(models.Model):
@@ -106,7 +106,7 @@ class Archivo(models.Model):
     # usuario_generador: quien subio/genero el archivo
     # on_delete=SET_NULL: si se borra el usuario, el archivo permanece
     usuario_generador = models.ForeignKey(
-        User,
+        settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
