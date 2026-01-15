@@ -21,8 +21,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia el resto del proyecto
 COPY . /app/
 
+# Colectar archivos estáticos
+RUN python manage.py collectstatic --noinput || true
+
 # Exponer el puerto de Django
 EXPOSE 8000
 
-# Comando para ejecutar la aplicación
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# Comando para ejecutar la aplicación en producción
+CMD python manage.py migrate && gunicorn innoquim.wsgi:application --bind 0.0.0.0:$PORT
