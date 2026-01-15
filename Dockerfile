@@ -28,4 +28,4 @@ RUN python manage.py collectstatic --noinput || true
 EXPOSE 8000
 
 # Comando para ejecutar la aplicación en producción
-CMD python manage.py migrate && gunicorn innoquim.wsgi:application --bind 0.0.0.0:$PORT
+CMD python manage.py migrate --fake materia_prima 0002 && python manage.py migrate && gunicorn innoquim.wsgi:application --bind 0.0.0.0:$PORT
