@@ -1,31 +1,35 @@
+# archivos/admin.py
+"""
+Configuración del panel de administración para Archivos.
+"""
+
 from django.contrib import admin
+from django.utils.html import format_html
 from .models import Archivo
 
 
 @admin.register(Archivo)
 class ArchivoAdmin(admin.ModelAdmin):
     """
-    Configuración del panel de administración para Archivo.
+    Panel de administración para gestionar archivos.
     """
     
-    # Columnas visibles en la lista
     list_display = [
         'archivo_id',
-        'nombre',
+        'nombre_corto',
         'tipo_reporte',
-        'tamaño_legible_display',
+        'tamaño_formateado',
         'usuario_generador',
         'fecha_generacion',
+        'ver_en_drive',
     ]
     
-    # Filtros laterales
     list_filter = [
         'tipo_reporte',
         'fecha_generacion',
         'usuario_generador',
     ]
     
-    # Campos por los que se puede buscar
     search_fields = [
         'archivo_id',
         'nombre',
@@ -33,61 +37,90 @@ class ArchivoAdmin(admin.ModelAdmin):
         'google_drive_id',
     ]
     
-    # Campos no editables
     readonly_fields = [
         'archivo_id',
         'google_drive_id',
         'url_descarga',
-        'tamaño',
-        'tamaño_legible_display',
         'fecha_generacion',
         'fecha_actualizacion',
+        'tamaño_formateado',
+        'preview_drive',
     ]
     
-    # Organización del formulario en secciones
     fieldsets = (
-        ('Identificación', {
-            'fields': ('archivo_id', 'nombre', 'tipo_reporte')
+        ('Información del Archivo', {
+            'fields': (
+                'archivo_id',
+                'nombre',
+                'tipo_reporte',
+                'descripcion',
+            )
         }),
         ('Google Drive', {
-            'fields': ('google_drive_id', 'url_descarga'),
-            'description': 'Información del archivo en Google Drive'
+            'fields': (
+                'google_drive_id',
+                'url_descarga',
+                'preview_drive',
+            )
         }),
-        ('Metadata', {
-            'fields': ('tamaño', 'tamaño_legible_display', 'descripcion')
+        ('Metadatos', {
+            'fields': (
+                'tamaño',
+                'tamaño_formateado',
+                'usuario_generador',
+            )
         }),
-        ('Usuario y Auditoría', {
-            'fields': ('usuario_generador', 'fecha_generacion', 'fecha_actualizacion'),
+        ('Auditoría', {
+            'fields': (
+                'fecha_generacion',
+                'fecha_actualizacion',
+            ),
             'classes': ('collapse',)
         }),
     )
     
-    # Ordenamiento por defecto
     ordering = ['-fecha_generacion']
     
-    # Número de items por página
-    list_per_page = 25
+    def nombre_corto(self, obj):
+        """Muestra el nombre del archivo truncado."""
+        if len(obj.nombre) > 40:
+            return f"{obj.nombre[:37]}..."
+        return obj.nombre
+    nombre_corto.short_description = 'Nombre'
     
-    # Acciones personalizadas
-    actions = ['descargar_seleccionados']
-    
-    def tamaño_legible_display(self, obj):
-        """Muestra el tamaño en formato legible en el admin"""
+    def tamaño_formateado(self, obj):
+        """Muestra el tamaño en formato legible."""
         return obj.get_tamaño_legible()
-    tamaño_legible_display.short_description = 'Tamaño'
+    tamaño_formateado.short_description = 'Tamaño'
     
-    def descargar_seleccionados(self, request, queryset):
-        """Acción para marcar archivos seleccionados (placeholder)"""
-        count = queryset.count()
-        self.message_user(
-            request,
-            f'{count} archivo(s) seleccionado(s). Usa la URL de descarga para obtenerlos.'
-        )
-    descargar_seleccionados.short_description = 'Ver URLs de descarga'
+    def ver_en_drive(self, obj):
+        """Botón para ver el archivo en Google Drive."""
+        if obj.url_descarga:
+            return format_html(
+                '<a href="{}" target="_blank" class="button">Ver en Drive</a>',
+                obj.url_descarga
+            )
+        return '-'
+    ver_en_drive.short_description = 'Acciones'
     
-    def has_add_permission(self, request):
+    def preview_drive(self, obj):
+        """Muestra un preview del archivo de Google Drive."""
+        if obj.url_descarga:
+            usuario = getattr(obj.usuario_generador, 'name', obj.usuario_generador.username) if obj.usuario_generador else 'N/A'
+            return format_html(
+                '<a href="{}" target="_blank">Abrir en Google Drive</a><br>'
+                '<small>ID: {}</small><br>'
+                '<small>Subido por: {}</small>',
+                obj.url_descarga,
+                obj.google_drive_id,
+                usuario
+            )
+        return '-'
+    preview_drive.short_description = 'Vista Previa'
+    
+    def has_delete_permission(self, request, obj=None):
         """
-        Deshabilita la creación desde el admin.
-        Los archivos deben subirse via API.
+        Solo permite eliminar a superusuarios.
+        Los usuarios normales deben usar la API.
         """
-        return False
+        return request.user.is_superuser

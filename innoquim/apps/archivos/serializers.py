@@ -1,33 +1,22 @@
+# archivos/serializers.py
 """
-Serializers para el modelo Archivo.
+Serializers para el modelo Archivo y operaciones con Google Drive.
 """
 
 from rest_framework import serializers
 from .models import Archivo
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
 
 
 class ArchivoSerializer(serializers.ModelSerializer):
     """
-    Serializer para el modelo Archivo.
-    Convierte objetos Archivo <-> JSON para la API REST.
+    Serializer principal para el modelo Archivo.
+    Incluye información del usuario que generó el archivo.
     """
     
-    # Campos adicionales de solo lectura
-    tipo_reporte_display = serializers.CharField(
-        source='get_tipo_reporte_display',
-        read_only=True
-    )
-    
-    nombre_usuario = serializers.CharField(
-        source='usuario_generador.get_full_name',
-        read_only=True
-    )
-    
-    username = serializers.CharField(
-        source='usuario_generador.username',
-        read_only=True
-    )
-    
+    usuario_generador_nombre = serializers.SerializerMethodField()
     tamaño_legible = serializers.SerializerMethodField()
     
     class Meta:
@@ -36,15 +25,13 @@ class ArchivoSerializer(serializers.ModelSerializer):
             'archivo_id',
             'nombre',
             'tipo_reporte',
-            'tipo_reporte_display',
             'google_drive_id',
             'url_descarga',
             'tamaño',
             'tamaño_legible',
             'descripcion',
             'usuario_generador',
-            'nombre_usuario',
-            'username',
+            'usuario_generador_nombre',
             'fecha_generacion',
             'fecha_actualizacion',
         ]
@@ -52,36 +39,60 @@ class ArchivoSerializer(serializers.ModelSerializer):
             'archivo_id',
             'google_drive_id',
             'url_descarga',
-            'tamaño',
             'fecha_generacion',
             'fecha_actualizacion',
         ]
     
+    def get_usuario_generador_nombre(self, obj):
+        """Retorna el nombre del usuario."""
+        if obj.usuario_generador:
+            # Intenta obtener el campo 'name', si no existe usa 'username'
+            return getattr(obj.usuario_generador, 'name', obj.usuario_generador.username)
+        return None
+    
     def get_tamaño_legible(self, obj):
-        """Retorna el tamaño en formato legible (KB, MB, etc)"""
-        tamaño = obj.tamaño
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if tamaño < 1024.0:
-                return f"{tamaño:.1f} {unit}"
-            tamaño /= 1024.0
-        return f"{tamaño:.1f} TB"
+        """Retorna el tamaño en formato legible."""
+        return obj.get_tamaño_legible()
+
+
+class ArchivoListSerializer(serializers.ModelSerializer):
+    """
+    Serializer simplificado para listar archivos.
+    Solo incluye campos esenciales para mejorar performance.
+    """
+    
+    usuario_generador_nombre = serializers.SerializerMethodField()
+    tamaño_legible = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Archivo
+        fields = [
+            'archivo_id',
+            'nombre',
+            'tipo_reporte',
+            'tamaño_legible',
+            'usuario_generador_nombre',
+            'fecha_generacion',
+        ]
+    
+    def get_usuario_generador_nombre(self, obj):
+        if obj.usuario_generador:
+            return obj.usuario_generador.username
+        return None
+    
+    def get_tamaño_legible(self, obj):
+        return obj.get_tamaño_legible()
 
 
 class ArchivoUploadSerializer(serializers.Serializer):
     """
-    Serializer para subir archivos PDF.
+    Serializer para subir archivos a Google Drive.
+    Valida el archivo y los metadatos antes de subirlo.
     """
     
-    # archivo: el PDF en base64 o como file upload
     archivo = serializers.FileField(
         required=True,
-        help_text='Archivo PDF a subir'
-    )
-    
-    nombre = serializers.CharField(
-        max_length=255,
-        required=False,
-        help_text='Nombre descriptivo del archivo (opcional, se usa el nombre del archivo si no se proporciona)'
+        help_text='Archivo a subir (PDF, Excel, Word, etc.)'
     )
     
     tipo_reporte = serializers.ChoiceField(
@@ -93,16 +104,58 @@ class ArchivoUploadSerializer(serializers.Serializer):
     descripcion = serializers.CharField(
         required=False,
         allow_blank=True,
-        help_text='Descripcion opcional del reporte'
+        max_length=1000,
+        help_text='Descripción opcional del archivo'
     )
     
     def validate_archivo(self, value):
-        """Valida que el archivo sea un PDF"""
-        if not value.name.lower().endswith('.pdf'):
-            raise serializers.ValidationError("Solo se permiten archivos PDF")
+        """
+        Valida el archivo subido.
+        Puedes agregar validaciones de tamaño, tipo MIME, etc.
+        """
+        # Validar tamaño máximo (50 MB)
+        max_size = 50 * 1024 * 1024  # 50 MB
+        if value.size > max_size:
+            raise serializers.ValidationError(
+                f'El archivo es muy grande. Tamaño máximo: 50 MB'
+            )
         
-        # Validar tamaño (maximo 10MB)
-        if value.size > 10 * 1024 * 1024:  # 10MB
-            raise serializers.ValidationError("El archivo no puede superar 10MB")
+        # Validar extensiones permitidas
+        allowed_extensions = ['.pdf', '.xlsx', '.xls', '.docx', '.doc', '.csv']
+        file_extension = value.name.lower().split('.')[-1]
+        
+        if f'.{file_extension}' not in allowed_extensions:
+            raise serializers.ValidationError(
+                f'Tipo de archivo no permitido. Extensiones permitidas: {", ".join(allowed_extensions)}'
+            )
         
         return value
+
+
+class ArchivoDetailSerializer(serializers.ModelSerializer):
+    """
+    Serializer detallado con toda la información del archivo.
+    Incluye información completa del usuario.
+    """
+    
+    usuario_generador_info = serializers.SerializerMethodField()
+    tamaño_legible = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Archivo
+        fields = '__all__'
+    
+    def get_usuario_generador_info(self, obj):
+        """Retorna información completa del usuario."""
+        if obj.usuario_generador:
+            return {
+                'id': obj.usuario_generador.id,
+                'username': obj.usuario_generador.username,
+                'nombre': getattr(obj.usuario_generador, 'name', obj.usuario_generador.username),
+                'email': obj.usuario_generador.email,
+                'rol': getattr(obj.usuario_generador, 'rol', None),
+            }
+        return None
+    
+    def get_tamaño_legible(self, obj):
+        return obj.get_tamaño_legible()

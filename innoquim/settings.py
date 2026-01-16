@@ -207,3 +207,43 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Rutas para credenciales de Google Drive
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Carpeta donde se guardarán las credenciales
+CREDENTIALS_DIR = os.path.join(BASE_DIR, 'credentials')
+
+# Se asegura de que exista la carpeta
+os.makedirs(CREDENTIALS_DIR, exist_ok=True)
+
+# Configuración de Google Drive OAuth 2.0
+GOOGLE_DRIVE_CREDENTIALS_PATH = os.getenv(
+    'GOOGLE_DRIVE_CREDENTIALS_PATH',
+    os.path.join(CREDENTIALS_DIR, 'google-drive-credentials.json')
+)
+
+GOOGLE_DRIVE_TOKEN_PATH = os.getenv(
+    'GOOGLE_DRIVE_TOKEN_PATH',
+    os.path.join(CREDENTIALS_DIR, 'token.json')
+)
+
+GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
+
+# Validar que existe FOLDER_ID
+if not GOOGLE_DRIVE_FOLDER_ID and not DEBUG:
+    raise ValueError(
+        "GOOGLE_DRIVE_FOLDER_ID no está configurado en las variables de entorno"
+    )
+
+# =================================================================
+# CONFIGURACIÓN DE ARCHIVOS Y MEDIA
+# =================================================================
+
+# Tamaño máximo de archivos (50 MB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50 MB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024  # 50 MB
+
+# Directorio temporal para archivos
+TEMP_UPLOAD_DIR = os.path.join(BASE_DIR, 'temp_uploads')
+os.makedirs(TEMP_UPLOAD_DIR, exist_ok=True)

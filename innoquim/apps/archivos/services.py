@@ -1,191 +1,223 @@
+# archivos/services.py
 """
-Servicio para comunicarse con el microservicio file-manager.
-Gestiona la subida y descarga de archivos a Google Drive.
+Servicio para interactuar con Google Drive API usando OAuth 2.0.
+Adaptado para Django REST Framework.
 """
 
-import requests
+import os
+import io
 from django.conf import settings
-from typing import Dict, Optional
-import logging
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from googleapiclient.errors import HttpError
 
-logger = logging.getLogger(__name__)
 
-
-class FileManagerService:
+class GoogleDriveService:
     """
-    Cliente para comunicarse con el servicio file-manager (FastAPI).
+    Servicio para gestionar archivos en Google Drive.
+    Compatible con cuentas personales de Google usando OAuth 2.0.
+    """
     
-    El servicio file-manager corre en un contenedor Docker separado
-    y se encarga de subir archivos a Google Drive.
-    """
+    # Scope necesario para crear y gestionar archivos
+    SCOPES = ['https://www.googleapis.com/auth/drive.file']
     
     def __init__(self):
         """
-        Inicializa el servicio con la URL del file-manager.
-        
-        En desarrollo: http://localhost:8001
-        En produccion (Docker): http://file-manager:8001
+        Inicializa el servicio usando configuración de Django settings.
         """
-        # URL del servicio file-manager
-        # Usar 'file-manager' (nombre del contenedor) cuando se ejecuta en Docker
-        # Usar 'localhost' cuando se ejecuta localmente
-        self.base_url = getattr(
-            settings, 
-            'FILE_MANAGER_URL', 
-            'http://file-manager:8001'
-        )
+        self.credentials_path = settings.GOOGLE_DRIVE_CREDENTIALS_PATH
+        self.token_path = settings.GOOGLE_DRIVE_TOKEN_PATH
+        self.folder_id = settings.GOOGLE_DRIVE_FOLDER_ID
+        self.credentials = None
+        self.service = None
         
-        # Timeout para las peticiones (30 segundos)
-        self.timeout = 30
+        self._authenticate()
     
-    def upload_file(
-        self, 
-        file_content: bytes, 
-        filename: str, 
-        tipo_reporte: str,
-        descripcion: Optional[str] = None
-    ) -> Dict:
+    def _authenticate(self):
         """
-        Sube un archivo PDF al servicio file-manager.
+        Autentica con Google Drive usando OAuth 2.0.
+        Si ya existe un token válido, lo usa. Si no, inicia el flujo OAuth.
+        """
+        creds = None
+        
+        # Cargar token existente
+        if os.path.exists(self.token_path):
+            creds = Credentials.from_authorized_user_file(
+                self.token_path, 
+                self.SCOPES
+            )
+        
+        # Si no hay credenciales válidas, solicitar login
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                # Refrescar token expirado
+                creds.refresh(Request())
+            else:
+                # Iniciar flujo OAuth
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    self.credentials_path, 
+                    self.SCOPES
+                )
+                creds = flow.run_local_server(port=0)
+            
+            # Guardar credenciales para la próxima vez
+            os.makedirs(os.path.dirname(self.token_path), exist_ok=True)
+            with open(self.token_path, 'w') as token:
+                token.write(creds.to_json())
+        
+        self.credentials = creds
+        self.service = build('drive', 'v3', credentials=self.credentials)
+    
+    def upload_file(self, file_path: str, file_name: str, mime_type: str = 'application/pdf') -> dict:
+        """
+        Sube un archivo a Google Drive.
         
         Args:
-            file_content: Contenido del archivo en bytes
-            filename: Nombre del archivo (ej: reporte_inventario.pdf)
-            tipo_reporte: Tipo de reporte (inventario, clientes, etc)
-            descripcion: Descripcion opcional del archivo
+            file_path: Ruta local del archivo a subir
+            file_name: Nombre que tendrá el archivo en Drive
+            mime_type: Tipo MIME del archivo
         
         Returns:
-            Dict con informacion del archivo subido:
-            {
-                'archivo_id': 'ID en Google Drive',
-                'nombre': 'nombre.pdf',
-                'google_drive_id': 'ID',
-                'url_descarga': 'URL',
-                'tamaño': 12345,
-                'fecha_subida': '2025-11-20T...'
-            }
+            dict con 'id', 'webViewLink' y 'webContentLink'
         
         Raises:
-            Exception: Si falla la comunicacion con file-manager
+            HttpError: Si hay un error al subir el archivo
         """
-        url = f"{self.base_url}/api/archivos/upload"
-        
-        # Preparar datos del formulario
-        files = {
-            'file': (filename, file_content, 'application/pdf')
-        }
-        
-        data = {
-            'tipo_reporte': tipo_reporte,
-        }
-        
-        if descripcion:
-            data['descripcion'] = descripcion
-        
         try:
-            logger.info(f"Subiendo archivo a file-manager: {filename}")
+            file_metadata = {
+                'name': file_name,
+                'parents': [self.folder_id]
+            }
             
-            # Hacer peticion POST al file-manager
-            response = requests.post(
-                url,
-                files=files,
-                data=data,
-                timeout=self.timeout
+            media = MediaFileUpload(
+                file_path,
+                mimetype=mime_type,
+                resumable=True
             )
             
-            # Verificar si fue exitoso
-            response.raise_for_status()
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id, webViewLink, webContentLink'
+            ).execute()
             
-            result = response.json()
-            logger.info(f"Archivo subido exitosamente: {result.get('archivo_id')}")
+            # Hacer el archivo público para lectura
+            self.service.permissions().create(
+                fileId=file.get('id'),
+                body={'type': 'anyone', 'role': 'reader'}
+            ).execute()
             
-            return result
+            return {
+                'id': file.get('id'),
+                'webViewLink': file.get('webViewLink'),
+                'webContentLink': file.get('webContentLink')
+            }
         
-        except requests.exceptions.ConnectionError as e:
-            logger.error(f"Error de conexion con file-manager: {e}")
-            raise Exception(
-                "No se pudo conectar con el servicio de archivos. "
-                "Verifique que el contenedor file-manager este corriendo."
-            )
-        
-        except requests.exceptions.Timeout as e:
-            logger.error(f"Timeout al subir archivo: {e}")
-            raise Exception(
-                "El servicio de archivos tardo demasiado en responder. "
-                "Intente nuevamente."
-            )
-        
-        except requests.exceptions.HTTPError as e:
-            logger.error(f"Error HTTP al subir archivo: {e}")
-            error_detail = response.json().get('detail', 'Error desconocido')
-            raise Exception(f"Error al subir archivo: {error_detail}")
-        
-        except Exception as e:
-            logger.error(f"Error inesperado al subir archivo: {e}")
-            raise Exception(f"Error al subir archivo: {str(e)}")
+        except HttpError as error:
+            raise Exception(f'Error al subir archivo a Google Drive: {error}')
     
-    def delete_file(self, google_drive_id: str) -> bool:
+    def download_file(self, file_id: str, destination_path: str) -> bool:
         """
-        Elimina un archivo de Google Drive via file-manager.
+        Descarga un archivo de Google Drive.
         
         Args:
-            google_drive_id: ID del archivo en Google Drive
+            file_id: ID del archivo en Google Drive
+            destination_path: Ruta local donde guardar el archivo
         
         Returns:
-            True si se elimino correctamente, False en caso contrario
+            True si se descargó exitosamente
         """
-        url = f"{self.base_url}/api/archivos/{google_drive_id}"
-        
         try:
-            logger.info(f"Eliminando archivo de Google Drive: {google_drive_id}")
+            request = self.service.files().get_media(fileId=file_id)
             
-            response = requests.delete(url, timeout=self.timeout)
-            response.raise_for_status()
+            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
             
-            logger.info(f"Archivo eliminado exitosamente: {google_drive_id}")
+            with io.FileIO(destination_path, 'wb') as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+            
             return True
         
-        except Exception as e:
-            logger.error(f"Error al eliminar archivo: {e}")
-            return False
+        except HttpError as error:
+            raise Exception(f'Error al descargar archivo: {error}')
     
-    def get_file_info(self, google_drive_id: str) -> Optional[Dict]:
+    def delete_file(self, file_id: str) -> bool:
         """
-        Obtiene informacion de un archivo en Google Drive.
+        Elimina un archivo de Google Drive.
         
         Args:
-            google_drive_id: ID del archivo en Google Drive
+            file_id: ID del archivo a eliminar
         
         Returns:
-            Dict con informacion del archivo o None si hay error
+            True si se eliminó exitosamente
         """
-        url = f"{self.base_url}/api/archivos/{google_drive_id}/info"
-        
         try:
-            response = requests.get(url, timeout=self.timeout)
-            response.raise_for_status()
-            return response.json()
+            self.service.files().delete(fileId=file_id).execute()
+            return True
         
-        except Exception as e:
-            logger.error(f"Error al obtener info del archivo: {e}")
-            return None
+        except HttpError as error:
+            raise Exception(f'Error al eliminar archivo: {error}')
     
-    def health_check(self) -> bool:
+    def get_file_info(self, file_id: str) -> dict:
         """
-        Verifica si el servicio file-manager esta disponible.
+        Obtiene información detallada de un archivo.
+        
+        Args:
+            file_id: ID del archivo
         
         Returns:
-            True si el servicio responde, False en caso contrario
+            Diccionario con metadatos del archivo
         """
-        url = f"{self.base_url}/health"
-        
         try:
-            response = requests.get(url, timeout=5)
-            return response.status_code == 200
+            file = self.service.files().get(
+                fileId=file_id,
+                fields='id, name, size, createdTime, modifiedTime, webViewLink, webContentLink, mimeType'
+            ).execute()
+            
+            return file
         
-        except Exception:
-            return False
+        except HttpError as error:
+            raise Exception(f'Error al obtener información del archivo: {error}')
+    
+    def list_files(self, page_size: int = 100) -> list:
+        """
+        Lista los archivos de la carpeta en Google Drive.
+        
+        Args:
+            page_size: Número máximo de archivos a listar
+        
+        Returns:
+            Lista de archivos con sus metadatos
+        """
+        try:
+            query = f"'{self.folder_id}' in parents and trashed=false"
+            
+            results = self.service.files().list(
+                q=query,
+                pageSize=page_size,
+                fields="files(id, name, createdTime, size, webViewLink, mimeType)",
+                orderBy="createdTime desc"
+            ).execute()
+            
+            return results.get('files', [])
+        
+        except HttpError as error:
+            raise Exception(f'Error al listar archivos: {error}')
 
 
 # Instancia singleton del servicio
-file_manager_service = FileManagerService()
+_drive_service_instance = None
+
+def get_drive_service() -> GoogleDriveService:
+    """
+    Retorna una instancia singleton del servicio de Google Drive.
+    """
+    global _drive_service_instance
+    if _drive_service_instance is None:
+        _drive_service_instance = GoogleDriveService()
+    return _drive_service_instance
