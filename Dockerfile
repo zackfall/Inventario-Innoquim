@@ -21,8 +21,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia el resto del proyecto
 COPY . /app/
 
+# Instalar netcat para healthchecks
+RUN apt-get update && apt-get install -y netcat-openbsd && rm -rf /var/lib/apt/lists/*
+
+# Copiar script de entrada
+COPY entrypoint.sh /app/
+RUN chmod +x /app/entrypoint.sh
+
 # Exponer el puerto de Django
 EXPOSE 8000
 
-# Comando para ejecutar la aplicación en producción
-CMD python manage.py collectstatic --noinput && python manage.py migrate materia_prima 0001 && python manage.py migrate --fake materia_prima 0002_materiaprima_costo_promedio && python manage.py migrate && gunicorn innoquim.wsgi:application --bind 0.0.0.0:$PORT
+# Usar el script de entrada
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["gunicorn", "innoquim.wsgi:application", "--bind", "0.0.0.0:8000"]

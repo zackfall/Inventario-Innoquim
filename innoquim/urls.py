@@ -6,6 +6,7 @@ from innoquim.apps.unidad.views import UnidadViewSet
 from innoquim.apps.producto.views import ProductoViewSet
 from innoquim.apps.lote_produccion.views import LoteProduccionViewSet
 from innoquim.apps.material_produccion.views import MaterialProduccionViewSet
+from innoquim.apps.usuario.health_views import health_check
 
 router = DefaultRouter()
 
@@ -18,6 +19,7 @@ router.register(
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("api/health/", health_check, name="health-check"),  # Health check endpoint
     path("api/", include("innoquim.apps.cliente.urls")),  # API de Clientes
     path("api/", include("innoquim.apps.proveedor.urls")),  # API de Proveedor
     path("api/", include("innoquim.apps.materia_prima.urls")),  # API de Materia Prima
@@ -30,6 +32,7 @@ urlpatterns = [
     ),  # API de Pedido_material
     path("api/", include("innoquim.apps.orden_cliente.urls")),  # API de Orden_Cliente
     path("api/", include("innoquim.apps.orden_item.urls")),  # API de Orden_Item
+    path("api/", include("innoquim.apps.lote_produccion.urls")),  # API de Lote_Produccion
     path("api/", include("innoquim.apps.usuario.urls")),
     path("api/", include("innoquim.apps.almacen.urls")),
     path("api/", include("innoquim.apps.recepcion_material.urls")),

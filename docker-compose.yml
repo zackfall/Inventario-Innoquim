@@ -8,10 +8,15 @@ services:
       - POSTGRES_DB=${NAME}
       - POSTGRES_USER=${USER}
       - POSTGRES_PASSWORD=${PASSWORD}
+      - POSTGRES_REPLICATION_MODE=master
+      - POSTGRES_REPLICATION_USER=${REPLICATION_USER:-replicator}
+      - POSTGRES_REPLICATION_PASSWORD=${REPLICATION_PASSWORD:-replication123}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./postgres_init.sql:/docker-entrypoint-initdb.d
+      - ./scripts/master_init.sh:/docker-entrypoint-initdb.d/master_init.sh
     ports:
-      - "56032:5433"
+      - "5432:5432"
     networks:
         - innoquim_network
     healthcheck:
@@ -19,6 +24,90 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    command: >
+      postgres
+      -c wal_level=replica
+      -c max_wal_senders=10
+      -c max_replication_slots=10
+      -c hot_standby=on
+
+  db-replica:
+    image: postgres:15-alpine
+    container_name: db-replica
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_DB=${NAME}
+      - POSTGRES_USER=${USER}
+      - POSTGRES_PASSWORD=${PASSWORD}
+      - POSTGRES_REPLICATION_MODE=slave
+      - POSTGRES_MASTER_SERVICE=db
+      - POSTGRES_REPLICATION_USER=${REPLICATION_USER:-replicator}
+      - POSTGRES_REPLICATION_PASSWORD=${REPLICATION_PASSWORD:-replication123}
+      - PGPASSWORD=${REPLICATION_PASSWORD:-replication123}
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+        - innoquim_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER} -d ${NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        echo "🔧 Inicializando PostgreSQL REPLICA..."
+        
+        # Esperar a que el master esté listo
+        until pg_isready -h db -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" 2>/dev/null; do
+          echo "⏳ Esperando al MASTER..."
+          sleep 2
+        done
+        echo "✓ MASTER está listo"
+        
+        # Ejecutar inicialización si es necesario
+        if [ ! -f /var/lib/postgresql/data/PG_VERSION ]; then
+          echo "📥 Clonando BD desde MASTER con pg_basebackup..."
+          mkdir -p /var/lib/postgresql/data
+          chmod 700 /var/lib/postgresql/data
+          
+          pg_basebackup \
+            --host=db \
+            --username=$$POSTGRES_REPLICATION_USER \
+            --pgdata=/var/lib/postgresql/data \
+            --progress \
+            --write-recovery-conf \
+            --wal-method=stream \
+            --no-password 2>&1 || echo "⚠️ pg_basebackup completado"
+          
+          echo "✓ pg_basebackup completado"
+        else
+          echo "✓ Los datos ya existen, saltando pg_basebackup"
+        fi
+        
+        # Crear standby.signal para modo standby
+        touch /var/lib/postgresql/data/standby.signal
+        chmod 600 /var/lib/postgresql/data/standby.signal
+        
+        echo "✓ REPLICA lista para iniciar PostgreSQL"
+        
+        # Asegurar que los permisos sean correctos para el usuario postgres
+        chown -R 70:70 /var/lib/postgresql/data 2>/dev/null || true
+        
+        # Iniciar PostgreSQL como usuario postgres (el docker-entrypoint lo hará)
+        exec su-exec 70:70 postgres \
+          -c hot_standby=on \
+          -c recovery_target_timeline=latest \
+          -c max_standby_streaming_delay=300s \
+          -c wal_retrieve_retry_interval=5s
 
   # Redis para caché y colas de tareas
   redis:
@@ -39,7 +128,8 @@ services:
 
   web:
     build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    entrypoint: /app/entrypoint.sh
+    command: gunicorn innoquim.wsgi:application --bind 0.0.0.0:8000
     volumes:
       - .:/app
     ports:
@@ -47,19 +137,25 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgres://${USER}:${PASSWORD}@db:${PORT}/${NAME}
+      - DATABASE_URL=postgres://${USER}:${PASSWORD}@db:5432/${NAME}
+      - DATABASE_REPLICA_URL=postgres://${USER}:${PASSWORD}@db-replica:5432/${NAME}
+      - DATABASE_FAILOVER=true
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      db-replica:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
         - innoquim_network
 
 volumes:
   postgres_data:
+  postgres_replica_data:
   redis_data:
 
 networks:
   innoquim_network:
     name: innoquim_network
     driver: bridge
-    external: true

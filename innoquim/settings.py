@@ -33,7 +33,7 @@ DEBUG = os.getenv("DEBUG", "False") == "True"
 
 # ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1").split(",")
 ALLOWED_HOSTS = ["*"]
-
+    
 
 # Application definition
 
@@ -78,6 +78,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # "innoquim.db_failover.HealthCheckMiddleware",  # Comentado hasta que se agregue replica
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -107,13 +108,29 @@ WSGI_APPLICATION = "innoquim.wsgi.application"
 
 # Railway proporciona DATABASE_URL automáticamente
 if os.getenv("DATABASE_URL"):
-    DATABASES = {
-        "default": dj_database_url.config(
-            default=os.getenv("DATABASE_URL"),
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
+    # Configuración con failover automático a BD replica
+    database_config = dj_database_url.config(
+        default=os.getenv("DATABASE_URL"),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+    
+    # Si hay REPLICA y failover está habilitado
+    if os.getenv("DATABASE_FAILOVER") == "true" and os.getenv("DATABASE_REPLICA_URL"):
+        import dj_database_url as dj_db_url
+        replica_url = os.getenv("DATABASE_REPLICA_URL")
+        # Parse the replica URL manually
+        replica_config = dj_db_url.parse(replica_url)
+        replica_config['CONN_MAX_AGE'] = 600
+        replica_config['CONN_HEALTH_CHECKS'] = True
+        DATABASES = {
+            "default": database_config,
+            "replica": replica_config,
+        }
+    else:
+        DATABASES = {
+            "default": database_config,
+        }
 else:
     DATABASES = {
         "default": {
@@ -145,6 +162,9 @@ AUTH_PASSWORD_VALIDATORS = [
         "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
+
+# Database Routing para Failover
+DATABASE_ROUTERS = ["innoquim.db_failover.DatabaseFailoverRouter"]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
