@@ -215,7 +215,7 @@ class ArchivoViewSet(viewsets.ModelViewSet):
                     return Response(
                         {
                             'message': 'Archivo eliminado de la base de datos '
-                                     '(no existía en Google Drive)',
+                                    '(no existía en Google Drive)',
                             'warning': 'El archivo ya no existía en Google Drive'
                         },
                         status=status.HTTP_200_OK
@@ -227,7 +227,7 @@ class ArchivoViewSet(viewsets.ModelViewSet):
                 {
                     'error': f'Error al eliminar archivo: {str(e)}',
                     'detail': 'No se pudo completar la eliminación. '
-                             'El archivo puede seguir en Google Drive.'
+                            'El archivo puede seguir en Google Drive.'
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )

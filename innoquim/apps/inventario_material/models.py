@@ -1,24 +1,25 @@
 from django.db import models
-from innoquim.apps.materia_prima.models import MateriaPrima
+from django.contrib.contenttypes.fields import GenericForeignKey
+from django.contrib.contenttypes.models import ContentType
 from innoquim.apps.almacen.models import Almacen
 from innoquim.apps.unidad.models import Unidad
 
 
 class InventarioMaterial(models.Model):
     """
-    Control de cantidades actuales de materias primas en almacenes.
-    Representa el stock disponible en cada ubicacion.
+    Control de cantidades actuales por ítem y almacén (genérico).
+    Representa el stock disponible en cada ubicación para materias primas y productos.
     
     Relaciones:
-    - materia_prima_id: QUE material es
-    - almacen_id: DONDE esta guardado
-    - unidad_id: EN QUE se mide (kg, litros, etc)
+    - content_type + object_id: QUÉ ítem es (MateriaPrima o Producto)
+    - almacen_id: DÓNDE está guardado
+    - unidad_id: EN QUÉ se mide (kg, litros, etc)
     
     Notas:
-    - Este modelo solo refleja el stock ACTUAL
-    - El historial de compras (con proveedor) esta en recepcion_material
-    - La cantidad se actualiza con recepciones (+) y consumos (-)
-    - unique_together evita duplicados (mismo material en mismo almacen)
+    - Este modelo refleja el stock ACTUAL por combinación (ítem, almacén)
+    - El historial de movimientos y costos está en el modelo Kardex (app inventario)
+    - La cantidad se actualiza con recepciones/producción (+) y consumos/ventas (-)
+    - unique_together evita duplicados (mismo ítem en mismo almacén)
     """
     
     # =================================================================
@@ -40,16 +41,23 @@ class InventarioMaterial(models.Model):
     # RELACIONES (FOREIGN KEYS)
     # =================================================================
     
-    # materia_prima_id: QUE material se esta inventariando
-    # on_delete=PROTECT: no permite borrar materia prima si tiene inventario
-    # Razon: protege la integridad (evita perder referencia del material)
-    materia_prima_id = models.ForeignKey(
-        MateriaPrima,
+    # Ítem genérico (MateriaPrima o Producto)
+    content_type = models.ForeignKey(
+        ContentType,
         on_delete=models.PROTECT,
-        verbose_name='Materia Prima',
-        help_text='Material que se esta inventariando'
+        verbose_name='Tipo de Ítem',
+        help_text='Modelo del ítem inventariado (MateriaPrima o Producto)'
     )
-    
+    # Identificador externo del ítem
+    # Para MateriaPrima: materia_prima_id (p.ej. MP000001)
+    # Para Producto: product_code
+    object_id = models.CharField(
+        max_length=50,
+        verbose_name='Identificador del Ítem',
+        help_text='ID externo del ítem (MPnnnnnn o product_code)'
+    )
+    item = GenericForeignKey('content_type', 'object_id')
+
     # almacen_id: DONDE esta guardado el material
     # on_delete=PROTECT: no permite borrar almacen si tiene inventario
     # Razon: protege datos (no puedes eliminar un almacen con stock)
@@ -103,24 +111,25 @@ class InventarioMaterial(models.Model):
     
     class Meta:
         db_table = 'inventario_material'
-        verbose_name = 'Inventario de Material'
-        verbose_name_plural = 'Inventarios de Materiales'
+        verbose_name = 'Inventario de Ítems'
+        verbose_name_plural = 'Inventarios de Ítems'
         ordering = ['inventario_material_id']
         
         # unique_together: restriccion de unicidad compuesta
         # NO puede haber dos registros con la misma combinacion
         # Un material solo puede estar UNA VEZ en cada almacen
-        unique_together = [['materia_prima_id', 'almacen_id']]
+        unique_together = [['content_type', 'object_id', 'almacen_id']]
         
         # Indices para optimizar consultas frecuentes
         indexes = [
-            models.Index(fields=['materia_prima_id']),
+            models.Index(fields=['content_type', 'object_id']),
             models.Index(fields=['almacen_id']),
         ]
     
     def __str__(self):
         """Representacion legible del objeto (usado en admin y logs)"""
-        return f"{self.inventario_material_id} - {self.materia_prima_id.nombre} ({self.cantidad} {self.unidad_id.simbolo})"
+        nombre = getattr(self.item, 'nombre', None) or getattr(self.item, 'name', str(self.object_id))
+        return f"{self.inventario_material_id} - {nombre} ({self.cantidad} {self.unidad_id.simbolo})"
     
     def save(self, *args, **kwargs):
         """
