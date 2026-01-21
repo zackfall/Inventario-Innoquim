@@ -7,6 +7,36 @@ from django.dispatch import receiver
 from decimal import Decimal
 
 
+@receiver(post_save, sender="recepcion_material.RecepcionMaterial")
+def recepcion_material_saved(sender, instance, created, **kwargs):
+    """
+    Cuando se crea una RecepcionMaterial, registra ENTRADA en Kardex.
+    
+    Este signal permite que RecepcionMaterial funcione independientemente de RecepcionItem,
+    dando flexibilidad al sistema para recibir material de dos formas:
+    1. Recepción simple (directamente en RecepcionMaterial)
+    2. Recepción detallada (usando RecepcionItem)
+    """
+    if created and instance.materia_prima and instance.cantidad and instance.costo_unitario:
+        from innoquim.apps.inventario.models import Kardex
+        
+        # Registrar movimiento en Kardex
+        Kardex.registrar_movimiento(
+            almacen=instance.almacen,
+            item=instance.materia_prima,
+            tipo_movimiento="ENTRADA",
+            motivo="COMPRA",
+            cantidad=Decimal(str(instance.cantidad)),
+            costo_unitario=Decimal(str(instance.costo_unitario)),
+            referencia_id=f"RM{instance.id}-DIRECT",
+            observaciones=f"Recepción directa - Factura: {instance.numero_de_factura or 'N/A'} - Proveedor: {instance.proveedor}",
+            usuario=None,
+        )
+        
+        # Actualizar InventarioMaterial
+        actualizar_inventario_material(instance.materia_prima, instance.almacen)
+
+
 @receiver(post_save, sender="recepcion_item.RecepcionItem")
 def recepcion_item_saved(sender, instance, created, **kwargs):
     """
@@ -23,7 +53,7 @@ def recepcion_item_saved(sender, instance, created, **kwargs):
 
         # Obtener datos necesarios
         recepcion = instance.id_recepcion_material
-        almacen = recepcion.id_almacen
+        almacen = recepcion.almacen
         materia_prima = instance.materia_prima
         cantidad = Decimal(str(instance.cantidad))
         precio_compra = instance.precio_compra or Decimal("0.00")
