@@ -4,6 +4,8 @@ from .models import Producto
 
 class ProductoSerializer(serializers.ModelSerializer):
     unit_name = serializers.CharField(source="unit.name", read_only=True)
+    nombre_categoria = serializers.CharField(source="categoria_id.nombre", read_only=True)
+    tipo_categoria = serializers.CharField(source="categoria_id.get_tipo_display", read_only=True)
 
     class Meta:
         model = Producto
@@ -12,6 +14,9 @@ class ProductoSerializer(serializers.ModelSerializer):
             "product_code",
             "name",
             "description",
+            "categoria_id",        
+            "nombre_categoria",    
+            "tipo_categoria",    
             "unit",
             "unit_name",
             "weight",
