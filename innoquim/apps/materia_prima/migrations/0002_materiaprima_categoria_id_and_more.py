@@ -2,7 +2,13 @@
 
 import django.db.models.deletion
 from django.db import migrations, models
+from django.db import connection
 
+def add_costo_promedio_if_not_exists(apps, schema_editor):
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name='materia_prima' AND column_name='costo_promedio'")
+        if not cursor.fetchone():
+            cursor.execute('ALTER TABLE "materia_prima" ADD COLUMN "costo_promedio" numeric(12, 4) DEFAULT 0.0 NOT NULL')
 
 class Migration(migrations.Migration):
 
@@ -18,7 +24,8 @@ class Migration(migrations.Migration):
             field=models.ForeignKey(default=1, help_text='Categoria de clasificacion de la materia prima', limit_choices_to={'tipo': 'RAW_MATERIAL'}, on_delete=django.db.models.deletion.PROTECT, related_name='materias_primas', to='categoria.categoria', verbose_name='Categoria'),
             preserve_default=False,
         ),
-        migrations.AddField(
+        migrations.RunPython(add_costo_promedio_if_not_exists),
+        migrations.AlterField(
             model_name='materiaprima',
             name='costo_promedio',
             field=models.DecimalField(decimal_places=4, default=0.0, help_text='Costo promedio unitario actualizado por el Kardex', max_digits=12, verbose_name='Costo Promedio ($)'),

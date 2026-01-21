@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y netcat-openbsd && rm -rf /var/lib/apt/l
 
 # Copiar script de entrada
 COPY entrypoint.sh /app/
-RUN chmod +x /app/entrypoint.sh
+RUN sed -i 's/\r$//g' /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Exponer el puerto de Django
 EXPOSE 8000
