@@ -3,3 +3,14 @@ __pycache__/
 venv/
 .python-version
 file-manager/credentials/*.json
+staticfiles/
+*.pyc
+.DS_Store
+*.sqlite3
+db.sqlite3
+.vscode/
+*.log
+*.pot
+dist/
+build/
+*.egg-info/
