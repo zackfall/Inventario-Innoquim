@@ -1,7 +1,7 @@
-# archivos/views.py
+# backend/apps/archivos/views.py
 """
-Views para gestionar archivos con Google Drive.
-Implementa permisos: todos pueden ver, solo el creador puede eliminar.
+Views para gestionar archivos.
+Ahora delega la gestión de Google Drive al File Manager Service.
 """
 
 import os
@@ -10,8 +10,6 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.core.files.storage import default_storage
-from django.core.files.base import ContentFile
 
 from .models import Archivo
 from .serializers import (
@@ -20,23 +18,22 @@ from .serializers import (
     ArchivoUploadSerializer,
     ArchivoDetailSerializer
 )
-from .services import get_drive_service
+from .services import get_file_manager_client
 
 
 class ArchivoViewSet(viewsets.ModelViewSet):
     """
-    ViewSet para gestionar archivos en Google Drive.
+    ViewSet para gestionar archivos.
+    
+    Flujo:
+    1. Usuario sube archivo a Django
+    2. Django envía archivo al File Manager (FastAPI)
+    3. File Manager sube a Google Drive y retorna IDs/URLs
+    4. Django guarda metadatos en PostgreSQL
     
     Permisos:
     - Todos los usuarios autenticados pueden: listar, ver, subir
     - Solo el creador puede: eliminar su propio archivo
-    
-    Endpoints:
-    - GET /api/archivos/ - Lista todos los archivos
-    - POST /api/archivos/ - Sube un nuevo archivo
-    - GET /api/archivos/{id}/ - Obtiene detalles de un archivo
-    - DELETE /api/archivos/{id}/ - Elimina un archivo (solo creador)
-    - GET /api/archivos/{id}/download/ - Obtiene URL de descarga
     """
     
     queryset = Archivo.objects.select_related('usuario_generador').all()
@@ -56,7 +53,6 @@ class ArchivoViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         """
         Filtra archivos según query params.
-        Permite filtrar por tipo_reporte y usuario.
         """
         queryset = super().get_queryset()
         
@@ -74,14 +70,15 @@ class ArchivoViewSet(viewsets.ModelViewSet):
     
     def create(self, request, *args, **kwargs):
         """
-        Sube un archivo a Google Drive y guarda metadatos en BD.
+        Sube un archivo.
         
         Flujo:
         1. Valida el archivo
-        2. Guarda temporalmente el archivo
-        3. Sube a Google Drive
-        4. Guarda metadatos en BD
-        5. Elimina archivo temporal
+        2. Guarda temporalmente
+        3. Envía al File Manager via HTTP
+        4. File Manager sube a Google Drive
+        5. Guarda metadatos en BD
+        6. Elimina archivo temporal
         """
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -90,48 +87,39 @@ class ArchivoViewSet(viewsets.ModelViewSet):
         tipo_reporte = serializer.validated_data['tipo_reporte']
         descripcion = serializer.validated_data.get('descripcion', '')
         
-        # Crear archivo temporal
-        temp_file = None
+        temp_file_path = None
+        
         try:
-            # Guardar archivo temporalmente
-            with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(archivo_subido.name)[1]) as temp_file:
+            # Crear archivo temporal
+            with tempfile.NamedTemporaryFile(
+                delete=False, 
+                suffix=os.path.splitext(archivo_subido.name)[1]
+            ) as temp_file:
                 for chunk in archivo_subido.chunks():
                     temp_file.write(chunk)
                 temp_file_path = temp_file.name
             
-            # Determinar MIME type
-            mime_types = {
-                '.pdf': 'application/pdf',
-                '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                '.xls': 'application/vnd.ms-excel',
-                '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                '.doc': 'application/msword',
-                '.csv': 'text/csv',
-            }
-            file_extension = os.path.splitext(archivo_subido.name)[1].lower()
-            mime_type = mime_types.get(file_extension, 'application/octet-stream')
-            
-            # Subir a Google Drive
-            drive_service = get_drive_service()
-            drive_result = drive_service.upload_file(
+            # Enviar al File Manager
+            file_manager = get_file_manager_client()
+            drive_result = file_manager.upload_file(
                 file_path=temp_file_path,
-                file_name=archivo_subido.name,
-                mime_type=mime_type
+                file_name=archivo_subido.name
             )
             
-            # Guardar en BD
+            # Guardar metadatos en BD
             archivo = Archivo.objects.create(
                 nombre=archivo_subido.name,
                 tipo_reporte=tipo_reporte,
                 descripcion=descripcion,
-                google_drive_id=drive_result['id'],
-                url_descarga=drive_result['webContentLink'],
-                tamaño=archivo_subido.size,
+                google_drive_id=drive_result['google_drive_id'],
+                url_descarga=drive_result['url_descarga'],
+                tamaño=drive_result['tamaño'],
                 usuario_generador=request.user
             )
             
             # Eliminar archivo temporal
-            os.remove(temp_file_path)
+            if temp_file_path and os.path.exists(temp_file_path):
+                os.remove(temp_file_path)
             
             # Retornar respuesta
             response_serializer = ArchivoDetailSerializer(archivo)
@@ -142,7 +130,7 @@ class ArchivoViewSet(viewsets.ModelViewSet):
         
         except Exception as e:
             # Limpiar archivo temporal en caso de error
-            if temp_file and os.path.exists(temp_file_path):
+            if temp_file_path and os.path.exists(temp_file_path):
                 os.remove(temp_file_path)
             
             return Response(
@@ -153,7 +141,11 @@ class ArchivoViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         """
         Elimina un archivo (solo si el usuario es el creador).
-        Elimina de Google Drive y de la BD.
+        
+        Flujo:
+        1. Verifica permisos
+        2. Solicita al File Manager eliminar de Google Drive
+        3. Elimina metadatos de BD
         """
         archivo = self.get_object()
         
@@ -165,9 +157,9 @@ class ArchivoViewSet(viewsets.ModelViewSet):
             )
         
         try:
-            # Eliminar de Google Drive
-            drive_service = get_drive_service()
-            drive_service.delete_file(archivo.google_drive_id)
+            # Solicitar eliminación al File Manager
+            file_manager = get_file_manager_client()
+            file_manager.delete_file(archivo.google_drive_id)
             
             # Eliminar de BD
             archivo.delete()
@@ -187,8 +179,6 @@ class ArchivoViewSet(viewsets.ModelViewSet):
     def download(self, request, archivo_id=None):
         """
         Retorna la URL de descarga directa del archivo.
-        
-        GET /api/archivos/{id}/download/
         """
         archivo = self.get_object()
         
@@ -204,8 +194,6 @@ class ArchivoViewSet(viewsets.ModelViewSet):
     def tipos_reporte(self, request):
         """
         Retorna los tipos de reporte disponibles.
-        
-        GET /api/archivos/tipos_reporte/
         """
         tipos = [
             {'value': choice[0], 'label': choice[1]}
@@ -217,8 +205,6 @@ class ArchivoViewSet(viewsets.ModelViewSet):
     def estadisticas(self, request):
         """
         Retorna estadísticas de archivos.
-        
-        GET /api/archivos/estadisticas/
         """
         queryset = self.get_queryset()
         
@@ -236,4 +222,16 @@ class ArchivoViewSet(viewsets.ModelViewSet):
             'mis_archivos': mis_archivos,
             'por_tipo': estadisticas_tipo,
             'espacio_usado': sum(a.tamaño for a in queryset)
+        })
+    
+    @action(detail=False, methods=['get'])
+    def file_manager_status(self, request):
+        """
+        Verifica el estado del File Manager Service.
+        """
+        file_manager = get_file_manager_client()
+        health = file_manager.health_check()
+        
+        return Response({
+            'file_manager': health
         })

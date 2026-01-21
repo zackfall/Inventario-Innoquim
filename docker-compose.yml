@@ -1,7 +1,13 @@
+version: '3.8'
+
+
 services:
+  # ===================================================================
+  # BASE DE DATOS - PostgreSQL
+  # ===================================================================
   db:
     image: postgres:15-alpine
-    container_name: db
+    container_name: innoquim-db
     env_file:
       - .env
     environment:
@@ -11,21 +17,27 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "56032:5433"
+      - "56032:5432"
+    networks:
+      - innoquim-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${USER} -d ${NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # Redis para caché y colas de tareas
+  # ===================================================================
+  # REDIS - Caché y colas de tareas
+  # ===================================================================
   redis:
     image: redis:7-alpine
-    container_name: redis
+    container_name: innoquim-redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - innoquim-network
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -33,9 +45,20 @@ services:
       timeout: 5s
       retries: 5
 
+  # ===================================================================
+  # BACKEND - Django REST Framework
+  # ===================================================================
   web:
-    build: .
-    command: python manage.py runserver 0.0.0.0:8000
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: innoquim-backend
+    restart: unless-stopped
+    command: >
+      sh -c "
+      python manage.py migrate &&
+      python manage.py runserver 0.0.0.0:8000
+      "
     volumes:
       - .:/app
     ports:
@@ -43,40 +66,60 @@ services:
     env_file:
       - .env
     environment:
-      - DATABASE_URL=postgres://${USER}:${PASSWORD}@db:${PORT}/${NAME}
-      - FILE_MANAGER_URL=http://localhost:8001
+      - DATABASE_URL=postgres://${USER}:${PASSWORD}@db:5432/${NAME}
+      - FILE_MANAGER_URL=http://file-manager:8001
+    networks:
+      - innoquim-network
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      file-manager:
+        condition: service_started
 
   # ===================================================================
-  # SERVICIO DE GESTION DE ARCHIVOS
+  # FILE MANAGER - FastAPI + Google Drive
   # ===================================================================
   file-manager:
     build:
-      context: ./file-manager-service
+      context: ./file-manager
       dockerfile: Dockerfile
     container_name: innoquim-file-manager
     restart: unless-stopped
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
     ports:
       - "8001:8001"
+    env_file:
+      - .env
     environment:
       - GOOGLE_CREDENTIALS_PATH=/app/credentials/google-drive-credentials.json
+      - GOOGLE_TOKEN_PATH=/app/credentials/token.json
       - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
     volumes:
-      - ./file-manager-service:/app
-      - ./file-manager-service/credentials:/app/credentials
+      - ./file-manager:/app
+      - ./file-manager/credentials:/app/credentials
       - file-manager-temp:/app/temp_uploads
-    depends_on:
-      - web
+    networks:
+      - innoquim-network
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8001/health')"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
 
+# ===========================================================================
+# NETWORKS
+# ===========================================================================
+networks:
+  innoquim-network:
+    driver: bridge
+
+# ===========================================================================
+# VOLUMES
+# ===========================================================================
 volumes:
   postgres_data:
   redis_data:
-  file-manager-temp:  
+  file-manager-temp:

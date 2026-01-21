@@ -2,4 +2,4 @@ __pycache__/
 .env
 venv/
 .python-version
-credentials/*.json
+file-manager/credentials/*.json
