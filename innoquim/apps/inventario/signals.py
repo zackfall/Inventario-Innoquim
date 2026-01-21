@@ -17,7 +17,7 @@ def recepcion_material_saved(sender, instance, created, **kwargs):
     1. Recepción simple (directamente en RecepcionMaterial)
     2. Recepción detallada (usando RecepcionItem)
     """
-    if created and instance.materia_prima and instance.cantidad and instance.costo_unitario:
+    if created and instance.materia_prima and instance.cantidad and instance.costo_unitario and instance.almacen:
         from innoquim.apps.inventario.models import Kardex
         
         # Registrar movimiento en Kardex
