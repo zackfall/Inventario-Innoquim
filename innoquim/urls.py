@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+from rest_framework_simplejwt.views import (TokenObtainPairView, TokenRefreshView,)
 
 from innoquim.apps.unidad.views import UnidadViewSet
 from innoquim.apps.producto.views import ProductoViewSet
@@ -19,6 +20,11 @@ router.register(
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    
+    path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    
+    path('api/', include('innoquim.apps.archivos.urls')),  # API del Gestor de Archivos
     path("api/health/", health_check, name="health-check"),  # Health check endpoint
     path("api/", include("innoquim.apps.categoria.urls")),  # API de Categorias
     path("api/", include("innoquim.apps.cliente.urls")),  # API de Clientes

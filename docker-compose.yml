@@ -1,7 +1,13 @@
+version: '3.8'
+
+
 services:
+  # ===================================================================
+  # BASE DE DATOS - PostgreSQL
+  # ===================================================================
   db:
     image: postgres:15-alpine
-    container_name: db
+    container_name: innoquim-db
     env_file:
       - .env
     environment:
@@ -105,14 +111,18 @@ services:
           -c max_standby_streaming_delay=300s \
           -c wal_retrieve_retry_interval=5s
 
-  # Redis para caché y colas de tareas
+  # ===================================================================
+  # REDIS - Caché y colas de tareas
+  # ===================================================================
   redis:
     image: redis:7-alpine
-    container_name: redis
+    container_name: innoquim-redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - innoquim-network
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -120,8 +130,15 @@ services:
       timeout: 5s
       retries: 5
 
+  # ===================================================================
+  # BACKEND - Django REST Framework
+  # ===================================================================
   web:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: innoquim-backend
+    restart: unless-stopped
     entrypoint: /app/entrypoint.sh
     command: gunicorn innoquim.wsgi:application --bind 0.0.0.0:8000
     volumes:
@@ -134,6 +151,7 @@ services:
       - DATABASE_URL=postgres://${USER}:${PASSWORD}@db:5432/${NAME}
       - DATABASE_REPLICA_URL=postgres://${USER}:${PASSWORD}@db-replica:5432/${NAME}
       - DATABASE_FAILOVER=true
+      - FILE_MANAGER_URL=http://file-manager:8001
     depends_on:
       db:
         condition: service_healthy
@@ -141,8 +159,43 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      file-manager:
+        condition: service_started
 
+  # ===================================================================
+  # FILE MANAGER - FastAPI + Google Drive
+  # ===================================================================
+  file-manager:
+    build:
+      context: ./file-manager
+      dockerfile: Dockerfile
+    container_name: innoquim-file-manager
+    restart: unless-stopped
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    environment:
+      - GOOGLE_CREDENTIALS_PATH=/app/credentials/google-drive-credentials.json
+      - GOOGLE_TOKEN_PATH=/app/credentials/token.json
+      - GOOGLE_DRIVE_FOLDER_ID=${GOOGLE_DRIVE_FOLDER_ID}
+    volumes:
+      - ./file-manager:/app
+      - ./file-manager/credentials:/app/credentials
+      - file-manager-temp:/app/temp_uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+# ===========================================================================
+# VOLUMES
+# ===========================================================================
 volumes:
   postgres_data:
   postgres_replica_data:
   redis_data:
+  file-manager-temp:

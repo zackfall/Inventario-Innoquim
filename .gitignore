@@ -2,6 +2,7 @@ __pycache__/
 .env
 venv/
 .python-version
+file-manager/credentials/*.json
 staticfiles/
 *.pyc
 .DS_Store

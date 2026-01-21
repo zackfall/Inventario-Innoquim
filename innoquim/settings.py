@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     "django_filters",
     "innoquim.apps.usuario",
     "innoquim.apps.almacen",
+    "innoquim.apps.archivos",
     "innoquim.apps.categoria",
     "innoquim.apps.cliente",
     "innoquim.apps.inventario_material",
@@ -243,3 +244,6 @@ MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# File Manager Service Configuration
+FILE_MANAGER_URL = os.getenv('FILE_MANAGER_URL', 'http://localhost:8001')
