@@ -11,6 +11,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('orden_cliente', '0001_initial'),
+        ('producto', '0004_producto_categoria_id'),
         ('producto', '0001_initial'),
         ('unidad', '0001_initial'),
     ]
