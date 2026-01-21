@@ -51,6 +51,7 @@ class Archivo(models.Model):
         ('pedidos', 'Pedidos de Material'),
         ('materias_primas', 'Materias Primas'),
         ('ordenes', 'Ordenes de Cliente'),
+        ('categorias', 'Categorias'),
         ('otro', 'Otro'),
     ]
     
