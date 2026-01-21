@@ -41,6 +41,13 @@ class RecepcionMaterialSerializer(serializers.ModelSerializer):
         """Validar que los campos necesarios estén completos para el cálculo"""
         cantidad = data.get('cantidad')
         costo_unitario = data.get('costo_unitario')
+        almacen = data.get('almacen')
+        
+        # Validar que se especifique un almacén
+        if not almacen:
+            raise serializers.ValidationError({
+                'almacen': 'Este campo es obligatorio para registrar una recepción de material.'
+            })
         
         if cantidad and costo_unitario:
             data['total'] = cantidad * costo_unitario

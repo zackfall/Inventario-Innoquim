@@ -10,38 +10,40 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ("pedido_material", "0001_initial"),
+        ("archivos", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name="pedidomaterial",
-            name="usuario_registro",
+            model_name="archivo",
+            name="usuario_generador",
             field=models.ForeignKey(
-                help_text="Empleado que registro el pedido en el sistema",
-                on_delete=django.db.models.deletion.PROTECT,
-                related_name="pedidos_materiales",
+                blank=True,
+                help_text="Usuario que subio el archivo",
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="archivos_generados",
                 to=settings.AUTH_USER_MODEL,
-                verbose_name="Usuario que Registro",
+                verbose_name="Usuario Generador",
             ),
         ),
         migrations.AddIndex(
-            model_name="pedidomaterial",
+            model_name="archivo",
             index=models.Index(
-                fields=["proveedor_id"], name="pedido_mate_proveed_339f27_idx"
+                fields=["tipo_reporte"], name="archivo_tipo_re_589ac2_idx"
             ),
         ),
         migrations.AddIndex(
-            model_name="pedidomaterial",
+            model_name="archivo",
             index=models.Index(
-                fields=["fecha_pedido"], name="pedido_mate_fecha_p_9e0141_idx"
+                fields=["fecha_generacion"], name="archivo_fecha_g_822f1b_idx"
             ),
         ),
         migrations.AddIndex(
-            model_name="pedidomaterial",
+            model_name="archivo",
             index=models.Index(
-                fields=["usuario_registro"], name="pedido_mate_usuario_d35162_idx"
+                fields=["usuario_generador"], name="archivo_usuario_777690_idx"
             ),
         ),
     ]

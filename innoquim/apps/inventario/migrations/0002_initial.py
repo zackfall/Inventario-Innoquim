@@ -10,38 +10,43 @@ class Migration(migrations.Migration):
     initial = True
 
     dependencies = [
-        ("pedido_material", "0001_initial"),
+        ("inventario", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.AddField(
-            model_name="pedidomaterial",
-            name="usuario_registro",
+            model_name="kardex",
+            name="usuario",
             field=models.ForeignKey(
-                help_text="Empleado que registro el pedido en el sistema",
+                blank=True,
+                null=True,
                 on_delete=django.db.models.deletion.PROTECT,
-                related_name="pedidos_materiales",
                 to=settings.AUTH_USER_MODEL,
-                verbose_name="Usuario que Registro",
+                verbose_name="Usuario que registró el movimiento",
             ),
         ),
         migrations.AddIndex(
-            model_name="pedidomaterial",
+            model_name="kardex",
             index=models.Index(
-                fields=["proveedor_id"], name="pedido_mate_proveed_339f27_idx"
+                fields=["content_type", "object_id"],
+                name="inventario__content_144512_idx",
             ),
         ),
         migrations.AddIndex(
-            model_name="pedidomaterial",
+            model_name="kardex",
             index=models.Index(
-                fields=["fecha_pedido"], name="pedido_mate_fecha_p_9e0141_idx"
+                fields=["almacen"], name="inventario__almacen_7f009b_idx"
             ),
         ),
         migrations.AddIndex(
-            model_name="pedidomaterial",
+            model_name="kardex",
+            index=models.Index(fields=["fecha"], name="inventario__fecha_6586a6_idx"),
+        ),
+        migrations.AddIndex(
+            model_name="kardex",
             index=models.Index(
-                fields=["usuario_registro"], name="pedido_mate_usuario_d35162_idx"
+                fields=["tipo_movimiento"], name="inventario__tipo_mo_18c5dc_idx"
             ),
         ),
     ]
