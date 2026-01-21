@@ -1,0 +1,3 @@
+-- Archivo para restaurar desde un backup
+-- Coloca tu archivo backup.sql aquí y descomenta:
+-- psql -U ${USER} -d ${NAME} < /docker-entrypoint-initdb.d/backup.sql
