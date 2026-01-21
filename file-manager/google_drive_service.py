@@ -5,12 +5,15 @@ Compatible con cuentas personales de Google.
 
 import os
 import io
+import logging
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from googleapiclient.errors import HttpError
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleDriveService:
@@ -111,7 +114,7 @@ class GoogleDriveService:
             }
         
         except HttpError as error:
-            print(f'Error al subir archivo: {error}')
+            logger.error(f'Error al subir archivo: {error}')
             raise
     
     def download_file(self, file_id: str, destination_path: str) -> bool:
@@ -133,13 +136,13 @@ class GoogleDriveService:
                 done = False
                 while not done:
                     status, done = downloader.next_chunk()
-                    print(f"Descarga {int(status.progress() * 100)}%")
+                    logger.info(f"Descarga {int(status.progress() * 100)}%")
             
             return True
         
         except HttpError as error:
-            print(f'Error al descargar archivo: {error}')
-            return False
+            logger.error(f'Error al descargar archivo: {error}')
+            raise
     
     def list_files(self, page_size: int = 100) -> list:
         """
@@ -163,26 +166,44 @@ class GoogleDriveService:
             return results.get('files', [])
         
         except HttpError as error:
-            print(f'Error al listar archivos: {error}')
+            logger.error(f'Error al listar archivos: {error}')
             return []
     
     def delete_file(self, file_id: str) -> bool:
         """
-        Elimina un archivo de Google Drive.
+        Elimina PERMANENTEMENTE un archivo de Google Drive.
         
         Args:
             file_id: ID del archivo a eliminar
         
         Returns:
             True si se eliminó exitosamente
+            
+        Raises:
+            HttpError: Si hay un error al eliminar (404, 403, etc.)
         """
         try:
+            # Verificar que el archivo existe antes de intentar eliminarlo
+            try:
+                self.service.files().get(fileId=file_id, fields='id').execute()
+            except HttpError as e:
+                if e.resp.status == 404:
+                    logger.warning(f'Archivo {file_id} no encontrado en Google Drive')
+                    raise ValueError(f'Archivo no encontrado: {file_id}')
+                raise
+            
+            # Eliminar el archivo permanentemente
             self.service.files().delete(fileId=file_id).execute()
+            logger.info(f'Archivo {file_id} eliminado exitosamente de Google Drive')
             return True
         
         except HttpError as error:
-            print(f'Error al eliminar archivo: {error}')
-            return False
+            logger.error(f'Error HTTP al eliminar archivo {file_id}: {error}')
+            # Re-lanzar la excepción para que FastAPI la maneje
+            raise
+        except Exception as error:
+            logger.error(f'Error inesperado al eliminar archivo {file_id}: {error}')
+            raise
     
     def get_file_info(self, file_id: str) -> dict:
         """
@@ -203,5 +224,5 @@ class GoogleDriveService:
             return file
         
         except HttpError as error:
-            print(f'Error al obtener info del archivo: {error}')
-            return {}
+            logger.error(f'Error al obtener info del archivo: {error}')
+            raise

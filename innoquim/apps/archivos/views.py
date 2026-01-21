@@ -1,4 +1,3 @@
-# backend/apps/archivos/views.py
 """
 Views para gestionar archivos.
 Ahora delega la gestión de Google Drive al File Manager Service.
@@ -10,6 +9,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+import logging
 
 from .models import Archivo
 from .serializers import (
@@ -19,6 +19,8 @@ from .serializers import (
     ArchivoDetailSerializer
 )
 from .services import get_file_manager_client
+
+logger = logging.getLogger(__name__)
 
 
 class ArchivoViewSet(viewsets.ModelViewSet):
@@ -117,10 +119,6 @@ class ArchivoViewSet(viewsets.ModelViewSet):
                 usuario_generador=request.user
             )
             
-            # Eliminar archivo temporal
-            if temp_file_path and os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-            
             # Retornar respuesta
             response_serializer = ArchivoDetailSerializer(archivo)
             return Response(
@@ -129,14 +127,19 @@ class ArchivoViewSet(viewsets.ModelViewSet):
             )
         
         except Exception as e:
-            # Limpiar archivo temporal en caso de error
-            if temp_file_path and os.path.exists(temp_file_path):
-                os.remove(temp_file_path)
-            
+            logger.error(f"Error al subir archivo: {str(e)}", exc_info=True)
             return Response(
                 {'error': f'Error al subir archivo: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+        finally:
+            # Limpiar archivo temporal SIEMPRE
+            if temp_file_path and os.path.exists(temp_file_path):
+                try:
+                    os.remove(temp_file_path)
+                except Exception as e:
+                    logger.warning(f"No se pudo eliminar archivo temporal: {e}")
     
     def destroy(self, request, *args, **kwargs):
         """
@@ -145,33 +148,87 @@ class ArchivoViewSet(viewsets.ModelViewSet):
         Flujo:
         1. Verifica permisos
         2. Solicita al File Manager eliminar de Google Drive
-        3. Elimina metadatos de BD
+        3. Solo si Google Drive confirma eliminación, elimina de BD
         """
         archivo = self.get_object()
         
         # Verificar que el usuario sea el creador
         if archivo.usuario_generador != request.user:
+            logger.warning(
+                f"Usuario {request.user.id} intentó eliminar archivo {archivo.archivo_id} "
+                f"que pertenece a {archivo.usuario_generador.id}"
+            )
             return Response(
                 {'error': 'No tienes permisos para eliminar este archivo'},
                 status=status.HTTP_403_FORBIDDEN
             )
         
+        google_drive_id = archivo.google_drive_id
+        
         try:
-            # Solicitar eliminación al File Manager
+            # CRÍTICO: Primero eliminar de Google Drive
             file_manager = get_file_manager_client()
-            file_manager.delete_file(archivo.google_drive_id)
             
-            # Eliminar de BD
+            logger.info(f"Intentando eliminar archivo {google_drive_id} de Google Drive")
+            eliminado = file_manager.delete_file(google_drive_id)
+            
+            # Verificar que realmente se eliminó
+            if not eliminado:
+                logger.error(f"File Manager reportó fallo al eliminar {google_drive_id}")
+                return Response(
+                    {
+                        'error': 'No se pudo eliminar el archivo de Google Drive',
+                        'detail': 'El servicio de archivos no pudo completar la operación'
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+            
+            # Solo si Google Drive confirma, eliminar de BD
+            logger.info(f"Archivo {google_drive_id} eliminado de Drive, eliminando de BD")
             archivo.delete()
             
             return Response(
-                {'message': 'Archivo eliminado exitosamente'},
+                {
+                    'message': 'Archivo eliminado exitosamente',
+                    'archivo_id': str(archivo.archivo_id),
+                    'google_drive_id': google_drive_id
+                },
                 status=status.HTTP_204_NO_CONTENT
             )
         
         except Exception as e:
+            logger.error(
+                f"Error al eliminar archivo {google_drive_id}: {str(e)}", 
+                exc_info=True
+            )
+            
+            # Verificar si el archivo realmente existe en Drive
+            try:
+                info = file_manager.get_file_info(google_drive_id)
+                if info is None:
+                    # El archivo no existe en Drive, podemos eliminar de BD
+                    logger.warning(
+                        f"Archivo {google_drive_id} no existe en Drive, "
+                        f"eliminando solo de BD"
+                    )
+                    archivo.delete()
+                    return Response(
+                        {
+                            'message': 'Archivo eliminado de la base de datos '
+                                     '(no existía en Google Drive)',
+                            'warning': 'El archivo ya no existía en Google Drive'
+                        },
+                        status=status.HTTP_200_OK
+                    )
+            except Exception as verify_error:
+                logger.error(f"Error verificando archivo: {verify_error}")
+            
             return Response(
-                {'error': f'Error al eliminar archivo: {str(e)}'},
+                {
+                    'error': f'Error al eliminar archivo: {str(e)}',
+                    'detail': 'No se pudo completar la eliminación. '
+                             'El archivo puede seguir en Google Drive.'
+                },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
     
