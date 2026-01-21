@@ -1,0 +1,316 @@
+```
+╔════════════════════════════════════════════════════════════════════════════╗
+║                                                                            ║
+║               ARQUITECTURA - BASE DE DATOS CON FAILOVER                   ║
+║                                                                            ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│                          INTERFAZ DEL USUARIO                              │
+│                                                                            │
+│  Navegador → http://localhost:8000/admin  (Admin Django)                 │
+│           → http://localhost:8000/api/    (API REST)                     │
+│           → http://localhost:8000/api/health/  (Health Check)            │
+└────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────────┐
+│                       SERVIDOR DJANGO BACKEND                              │
+│                                                                            │
+│  Puerto: 8000                                                              │
+│  Contenedor: web                                                           │
+│  Imagen: inventario-innoquim-web:latest                                  │
+│                                                                            │
+│  ┌──────────────────────────────────────────────────────────────────┐    │
+│  │  Django App                                                      │    │
+│  │  • innoquim/settings.py                                         │    │
+│  │  • DATABASE_ROUTERS = DatabaseFailoverRouter                   │    │
+│  │  • DATABASES = {"default": ..., "replica": ...}                │    │
+│  └──┬───────────────────────────────────────────────────────────┬──┘    │
+│     │                                                           │        │
+│     ▼                                                           ▼        │
+│  ┌────────────────────────┐                   ┌────────────────────────┐ │
+│  │  MIDDLEWARE            │                   │  ENDPOINTS             │ │
+│  │  HealthCheckMiddleware │                   │  /api/health/          │ │
+│  │  - Monitorea BD        │                   │  health_check()        │ │
+│  │  - Registra eventos    │                   │                        │ │
+│  └────────────────────────┘                   └────────────────────────┘ │
+│     │                                           │                        │
+│     └───────────────────────┬───────────────────┘                        │
+│                             ▼                                             │
+│                  ┌──────────────────────┐                                │
+│                  │ DatabaseFailover     │                                │
+│                  │ Router               │                                │
+│                  │                      │                                │
+│                  │ db_for_read(model):  │                                │
+│                  │  ├─ Intenta primary  │                                │
+│                  │  └─ Fallback replica │                                │
+│                  │                      │                                │
+│                  │ db_for_write(model): │                                │
+│                  │  └─ Siempre primary  │                                │
+│                  └──┬───────────────────┘                                │
+│                     │                                                    │
+└─────────────────────┼────────────────────────────────────────────────────┘
+                      │
+         ┌────────────┴────────────┐
+         │                         │
+         ▼                         ▼
+  ┌──────────────────┐      ┌──────────────────┐
+  │  CONEXIÓN 1      │      │  CONEXIÓN 2      │
+  │  (PRIMARY)       │      │  (REPLICA)       │
+  │  Intento         │      │  Intento         │
+  │  Automático      │      │  Fallback        │
+  │  Pool: default   │      │  Pool: replica   │
+  └────────┬─────────┘      └────────┬─────────┘
+           │                         │
+           ▼                         ▼
+  ┌──────────────────┐      ┌──────────────────┐
+  │ PostgreSQL 15    │      │ PostgreSQL 15    │
+  │ MASTER           │◄────▶│ REPLICA          │
+  │ Port 5432        │      │ Port 5433        │
+  │ Contenedor: db   │      │ Contenedor:      │
+  │                  │      │ db-replica       │
+  │ ✓ Read          │      │ ✓ Read-Only      │
+  │ ✓ Write         │      │ ✗ No Write       │
+  │ ✓ WAL Enabled   │      │ ✓ Standby Mode   │
+  │                  │      │                  │
+  │ Config:          │      │ Config:          │
+  │ • Replication    │      │ • Hot Standby    │
+  │   Mode=replica   │      │ • Recovery Conf  │
+  │ • Senders=10     │      │                  │
+  │ • Slots=10       │      │                  │
+  │                  │      │                  │
+  │ Init Script:     │      │ Init Script:     │
+  │ master_init.sh   │      │ replica_init.sh  │
+  │                  │      │                  │
+  │ Usuario Rep:     │      │ Usuario Rep:     │
+  │ replicator       │      │ replicator       │
+  │                  │      │                  │
+  │ Volume:          │      │ Volume:          │
+  │ postgres_data/   │      │ postgres_replica_│
+  │                  │      │ data/            │
+  └──────────────────┘      └──────────────────┘
+           │                         ▲
+           │                         │
+           └─────── WAL/Streaming ────┘
+                   Replication
+            (Sincronización Continua)
+
+═════════════════════════════════════════════════════════════════════════════
+
+                         FLUJO DE OPERACIÓN
+
+┌─────────────┐
+│ HTTP Request│
+└──────┬──────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Django URL Router    │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────┐
+│ Django View/Endpoint │
+└──────┬───────────────┘
+       │
+       ▼
+┌──────────────────────────────────┐
+│ ORM Django (QuerySet)            │
+└──────┬─────────────────────────────┘
+       │
+       ▼
+┌──────────────────────────────────┐
+│ Database Router                  │
+│ DatabaseFailoverRouter           │
+│                                  │
+│ ¿Lectura o Escritura?            │
+└──┬──────────────────────────┬─────┘
+   │                          │
+   │ Lectura (select)         │ Escritura (insert/update)
+   ▼                          ▼
+┌─────────────────────┐  ┌──────────────────────┐
+│ Intenta PRIMARY     │  │ Intenta PRIMARY      │
+│                     │  │                      │
+│ ✓ Disponible?       │  │ ✓ Disponible?        │
+│   └─ Usa PRIMARY    │  │   └─ Usa PRIMARY     │
+│                     │  │                      │
+│ ✗ No disponible?    │  │ ✗ No disponible?     │
+│   └─ Intenta REPLICA│  │   └─ Error (Fallo)   │
+│      ✓ Disponible?  │  │                      │
+│        └─ Usa REPLICA│  │ (No permite          │
+│                     │  │  escrituras en       │
+│ ✗ Ambas caídas      │  │  replica)            │
+│   └─ Error (Fallo)  │  └──────────────────────┘
+└─────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+
+                    ESCENARIOS DE FAILOVER
+
+ESCENARIO 1: OPERACIÓN NORMAL
+─────────────────────────────────────────────────────────────────────────────
+
+  Request
+    │
+    ▼
+  DatabaseFailoverRouter
+    │
+    ├─ Try: db:5432 (PRIMARY)
+    │  └─ ✓ Conectado
+    │
+    └─ Usa: PRIMARY (Read + Write)
+       └─ Replica sigue sincronizando
+
+  Status: ✓ HEALTHY
+
+
+ESCENARIO 2: CAÍDA DE BD PRINCIPAL
+─────────────────────────────────────────────────────────────────────────────
+
+  Request
+    │
+    ▼
+  DatabaseFailoverRouter
+    │
+    ├─ Try: db:5432 (PRIMARY)
+    │  └─ ✗ Connection Timeout
+    │
+    ├─ Try: db-replica:5433 (REPLICA)
+    │  └─ ✓ Conectado
+    │
+    └─ Usa: REPLICA (Read Only)
+       └─ Escrituras retornan ERROR
+
+  Log: "⚠️ BD Principal no disponible, usando Replica"
+  Status: ⚠️ DEGRADED
+
+
+ESCENARIO 3: RECUPERACIÓN
+─────────────────────────────────────────────────────────────────────────────
+
+  BD Principal vuelve online
+    │
+    ▼
+  Next Request
+    │
+    ▼
+  DatabaseFailoverRouter
+    │
+    ├─ Try: db:5432 (PRIMARY)
+    │  └─ ✓ Conectado (Sincronizado automáticamente)
+    │
+    └─ Usa: PRIMARY (Read + Write)
+       └─ Replica continúa replicando
+
+  Log: "✓ BD Principal restaurada"
+  Status: ✓ HEALTHY
+
+═════════════════════════════════════════════════════════════════════════════
+
+                        MONITOREO
+
+┌──────────────────────────────────────────────────────────────────────────┐
+│  GET /api/health/                                                        │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Response (HEALTHY):                                                     │
+│  {                                                                       │
+│    "status": "healthy",                                                 │
+│    "backend": "running",                                                │
+│    "databases": {                                                       │
+│      "primary": {                                                       │
+│        "status": "connected",                                           │
+│        "host": "db"                                                     │
+│      },                                                                 │
+│      "replica": {                                                       │
+│        "status": "connected",                                           │
+│        "host": "db-replica",                                            │
+│        "readonly": true                                                 │
+│      }                                                                  │
+│    },                                                                   │
+│    "redis": "connected"                                                 │
+│  }                                                                       │
+│                                                                          │
+├──────────────────────────────────────────────────────────────────────────┤
+│  Response (DEGRADED):                                                    │
+│  {                                                                       │
+│    "status": "degraded",                                                │
+│    "backend": "running",                                                │
+│    "databases": {                                                       │
+│      "primary": {                                                       │
+│        "status": "disconnected",                                        │
+│        "error": "connection timeout"                                    │
+│      },                                                                 │
+│      "replica": {                                                       │
+│        "status": "connected",                                           │
+│        "host": "db-replica",                                            │
+│        "readonly": true                                                 │
+│      }                                                                  │
+│    },                                                                   │
+│    "redis": "connected"                                                 │
+│  }                                                                       │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+
+                          TOPOLOGÍA DE RED
+
+    ┌─────────────────────────────────────────────────┐
+    │  Docker Compose Network: innoquim_network       │
+    │  Type: Bridge                                   │
+    │  Driver: bridge                                 │
+    │  Isolated: Yes (solo contenedores conectados)   │
+    │                                                  │
+    │  ┌───────────────────────────────────────────┐  │
+    │  │  Servicios Internos (DNS):                │  │
+    │  │                                           │  │
+    │  │  • web:8000         (Backend Django)      │  │
+    │  │  • db:5432          (PostgreSQL Master)   │  │
+    │  │  • db-replica:5433  (PostgreSQL Replica)  │  │
+    │  │  • redis:6379       (Redis Cache)         │  │
+    │  │                                           │  │
+    │  └───────────────────────────────────────────┘  │
+    │                                                  │
+    │  Puertos Expuestos (Host):                      │
+    │  • 8000:8000    → web:8000                      │
+    │  • 5432:5432    → db:5432                       │
+    │  • 5433:5433    → db-replica:5433              │
+    │  • 6379:6379    → redis:6379                    │
+    │                                                  │
+    └─────────────────────────────────────────────────┘
+
+═════════════════════════════════════════════════════════════════════════════
+
+                          VOLÚMENES DOCKER
+
+    postgres_data/
+    ├─ Base de datos principal
+    ├─ WAL (Write-Ahead Logs)
+    └─ pg_hba.conf (Configuración de replicación)
+
+    postgres_replica_data/
+    ├─ Copia de base de datos
+    ├─ WAL aplicados
+    └─ standby.signal (Modo standby)
+
+    redis_data/
+    └─ Datos de Redis (caché)
+
+═════════════════════════════════════════════════════════════════════════════
+```
+
+Este diagrama muestra:
+1. La interfaz del usuario (navegador)
+2. El servidor Django con sus routers y middleware
+3. Las dos bases de datos (master y replica)
+4. La replicación en streaming
+5. Los diferentes flujos de operación
+6. Los escenarios de failover
+7. El endpoint de health check
+8. La topología de red Docker
+9. Los volúmenes de persistencia
+
+Todos estos componentes trabajan juntos para proporcionar un sistema
+de alta disponibilidad con failover automático.

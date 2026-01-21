@@ -13,6 +13,9 @@ class MateriaPrimaSerializer(serializers.ModelSerializer):
     nombre_categoria = serializers.CharField(source='categoria_id.nombre', read_only=True)
     tipo_categoria = serializers.CharField(source='categoria_id.get_tipo_display', read_only=True)
     
+    nombre_categoria = serializers.CharField(source='categoria_id.nombre', read_only=True)
+    tipo_categoria = serializers.CharField(source='categoria_id.get_tipo_display', read_only=True)
+    
     class Meta:
         model = MateriaPrima
         fields = [

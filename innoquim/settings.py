@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 import os
+import dj_database_url
 from datetime import timedelta
 from pathlib import Path
 
@@ -25,14 +26,14 @@ load_dotenv(os.path.join(BASE_DIR, ".env"))
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-fake-key-for-build-only-do-not-use-in-production")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
 # ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "127.0.0.1").split(",")
 ALLOWED_HOSTS = ["*"]
-
+    
 
 # Application definition
 
@@ -48,7 +49,6 @@ INSTALLED_APPS = [
     "innoquim.apps.almacen",
     "innoquim.apps.categoria",
     "innoquim.apps.cliente",
-    "innoquim.apps.entrega",
     "innoquim.apps.inventario_material",
     "innoquim.apps.inventario",
     "innoquim.apps.lote_produccion",
@@ -72,12 +72,14 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # "innoquim.db_failover.HealthCheckMiddleware",  # Comentado hasta que se agregue replica
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -105,16 +107,42 @@ WSGI_APPLICATION = "innoquim.wsgi.application"
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": os.getenv("NAME"),
-        "USER": os.getenv("USER"),
-        "PASSWORD": os.getenv("PASSWORD"),
-        "HOST": os.getenv("HOST"),
-        "PORT": os.getenv("PORT"),
+# Railway proporciona DATABASE_URL automáticamente
+if os.getenv("DATABASE_URL"):
+    # Configuración con failover automático a BD replica
+    database_config = dj_database_url.config(
+        default=os.getenv("DATABASE_URL"),
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
+    
+    # Si hay REPLICA y failover está habilitado
+    if os.getenv("DATABASE_FAILOVER") == "true" and os.getenv("DATABASE_REPLICA_URL"):
+        import dj_database_url as dj_db_url
+        replica_url = os.getenv("DATABASE_REPLICA_URL")
+        # Parse the replica URL manually
+        replica_config = dj_db_url.parse(replica_url)
+        replica_config['CONN_MAX_AGE'] = 600
+        replica_config['CONN_HEALTH_CHECKS'] = True
+        DATABASES = {
+            "default": database_config,
+            "replica": replica_config,
+        }
+    else:
+        DATABASES = {
+            "default": database_config,
+        }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": os.getenv("NAME"),
+            "USER": os.getenv("USER"),
+            "PASSWORD": os.getenv("PASSWORD"),
+            "HOST": os.getenv("HOST"),
+            "PORT": os.getenv("PORT"),
+        }
     }
-}
 
 AUTH_USER_MODEL = "usuario.Usuario"
 
@@ -135,6 +163,9 @@ AUTH_PASSWORD_VALIDATORS = [
         "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
     },
 ]
+
+# Database Routing para Failover
+DATABASE_ROUTERS = ["innoquim.db_failover.DatabaseFailoverRouter"]
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -200,7 +231,13 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = "static/"
+STATIC_URL = "/static/"
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# Media files
+MEDIA_URL = "/media/"
+MEDIA_ROOT = os.path.join(BASE_DIR, "media")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field

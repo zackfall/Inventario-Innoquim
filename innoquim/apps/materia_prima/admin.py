@@ -24,10 +24,8 @@ class MateriaPrimaAdmin(admin.ModelAdmin):
     # Filtros laterales
     list_filter = ['categoria_id', 'unidad_id', 'fecha_creacion']
     
-    # Campos por los que se puede buscar
     search_fields = ['materia_prima_id', 'codigo', 'nombre']
     
-    # Campos no editables
     readonly_fields = ['materia_prima_id', 'fecha_creacion', 'fecha_actualizacion']
     
     # Organización del formulario en secciones
@@ -35,11 +33,11 @@ class MateriaPrimaAdmin(admin.ModelAdmin):
         ('Identificación', {
             'fields': ('codigo',)
         }),
-        ('Información General', {
+        ('Informacion General', {
             'fields': ('nombre', 'descripcion', 'categoria_id', 'unidad_id')
         }),
-        ('Propiedades Físicas', {
-            'fields': ('densidad',)
+        ('Propiedades', {
+            'fields': ('densidad', 'stock_minimo', 'stock_maximo', 'costo_promedio')
         }),
         ('Control de Stock', {
             'fields': ('stock', 'stock_minimo', 'stock_maximo', 'costo_promedio')
