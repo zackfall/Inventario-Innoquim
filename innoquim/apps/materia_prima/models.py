@@ -1,4 +1,6 @@
 from django.db import models
+from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
 
 from innoquim.apps.categoria.models import Categoria
 from innoquim.apps.unidad.models import Unidad
@@ -96,8 +98,9 @@ class MateriaPrima(models.Model):
     # Se usa PositiveIntegerField para garantizar >= 0
     stock = models.DecimalField(
         max_digits=12,
-        decimal_places=4,
+        decimal_places=6,
         default=0,
+        validators=[MinValueValidator(0)],
         verbose_name='Stock',
         help_text='Cantidad actual disponible'
     )
@@ -106,8 +109,9 @@ class MateriaPrima(models.Model):
     # default=0: si no se especifica, asume 0
     stock_minimo = models.DecimalField(
         max_digits=10,
-        decimal_places=2,
+        decimal_places=6,
         default=0,
+        validators=[MinValueValidator(0)],
         verbose_name="Stock Minimo",
         help_text="Cantidad minima requerida en inventario",
     )
@@ -115,9 +119,10 @@ class MateriaPrima(models.Model):
     # stock_maximo: limite superior opcional
     stock_maximo = models.DecimalField(
         max_digits=10,
-        decimal_places=2,
+        decimal_places=6,
         blank=True,
         null=True,
+        validators=[MinValueValidator(0)],
         verbose_name="Stock Maximo",
         help_text="Cantidad maxima permitida en inventario (opcional)",
     )

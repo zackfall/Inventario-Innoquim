@@ -1,4 +1,6 @@
 from django.db import models
+from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
 
 
 class Producto(models.Model):
@@ -27,18 +29,31 @@ class Producto(models.Model):
         verbose_name="Costo Unitario",
         help_text="Último costo unitario de producción o compra"
     )
-    stock = models.PositiveIntegerField(default=0)
+    stock = models.DecimalField(
+        max_digits=12,
+        decimal_places=6,
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name="Stock",
+        help_text="Cantidad actual en inventario"
+    )
     
     # Control de niveles de stock para productos terminados
-    stock_minimo = models.PositiveIntegerField(
+    stock_minimo = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
         default=0,
+        validators=[MinValueValidator(0)],
         verbose_name="Stock Mínimo",
         help_text="Cantidad mínima requerida en inventario para alertas de reabastecimiento"
     )
     
-    stock_maximo = models.PositiveIntegerField(
+    stock_maximo = models.DecimalField(
+        max_digits=10,
+        decimal_places=6,
         blank=True,
         null=True,
+        validators=[MinValueValidator(0)],
         verbose_name="Stock Máximo",
         help_text="Cantidad máxima permitida en inventario (opcional, para control de sobreinventario)"
     )
@@ -53,6 +68,13 @@ class Producto(models.Model):
 
     def __str__(self):
         return f"{self.product_code} - {self.name}"
+    
+    def clean(self):
+        """Validaciones adicionales del modelo"""
+        if self.stock_maximo is not None and self.stock_minimo > self.stock_maximo:
+            raise ValidationError({
+                'stock_minimo': 'El stock mínimo no puede ser mayor que el stock máximo.'
+    })
     
     @property
     def stock_status(self):

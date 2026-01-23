@@ -44,20 +44,8 @@ class Archivo(models.Model):
     )
     
     # tipo_reporte: categoria del reporte
-    TIPO_REPORTE_CHOICES = [
-        ('inventario', 'Inventario'),
-        ('clientes', 'Clientes'),
-        ('proveedores', 'Proveedores'),
-        ('pedidos', 'Pedidos de Material'),
-        ('materias_primas', 'Materias Primas'),
-        ('ordenes', 'Ordenes de Cliente'),
-        ('categorias', 'Categorias'),
-        ('otro', 'Otro'),
-    ]
-    
     tipo_reporte = models.CharField(
         max_length=30,
-        choices=TIPO_REPORTE_CHOICES,
         verbose_name='Tipo de Reporte',
         help_text='Categoria del reporte generado'
     )

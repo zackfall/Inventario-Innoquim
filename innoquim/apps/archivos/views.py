@@ -253,8 +253,16 @@ class ArchivoViewSet(viewsets.ModelViewSet):
         Retorna los tipos de reporte disponibles.
         """
         tipos = [
-            {'value': choice[0], 'label': choice[1]}
-            for choice in Archivo.TIPO_REPORTE_CHOICES
+            {'value': 'inventario', 'label': 'Inventario'},
+            {'value': 'clientes', 'label': 'Clientes'},
+            {'value': 'proveedores', 'label': 'Proveedores'},
+            {'value': 'pedidos', 'label': 'Pedidos de Material'},
+            {'value': 'materias_primas', 'label': 'Materias Primas'},
+            {'value': 'ordenes', 'label': 'Ordenes de Cliente'},
+            {'value': 'categorias', 'label': 'Categorias'},
+            {'value': 'productos', 'label': 'Productos'},
+            {'value': 'almacenes', 'label': 'Almacenes'},
+            {'value': 'unidades', 'label': 'Unidades'},
         ]
         return Response({'tipos_reporte': tipos})
     
@@ -266,8 +274,21 @@ class ArchivoViewSet(viewsets.ModelViewSet):
         queryset = self.get_queryset()
         
         # Estadísticas por tipo de reporte
+        tipos_reporte = [
+            ('inventario', 'Inventario'),
+            ('clientes', 'Clientes'),
+            ('proveedores', 'Proveedores'),
+            ('pedidos', 'Pedidos de Material'),
+            ('materias_primas', 'Materias Primas'),
+            ('ordenes', 'Ordenes de Cliente'),
+            ('categorias', 'Categorias'),
+            ('productos', 'Productos'),
+            ('almacenes', 'Almacenes'),
+            ('unidades', 'Unidades'),
+        ]
+        
         estadisticas_tipo = {}
-        for tipo, label in Archivo.TIPO_REPORTE_CHOICES:
+        for tipo, label in tipos_reporte:
             count = queryset.filter(tipo_reporte=tipo).count()
             estadisticas_tipo[label] = count
         
