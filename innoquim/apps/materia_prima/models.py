@@ -94,10 +94,12 @@ class MateriaPrima(models.Model):
 
     # stock: cantidad actual en inventario como entero (unidades/paquetes)
     # Se usa PositiveIntegerField para garantizar >= 0
-    stock = models.PositiveIntegerField(
+    stock = models.DecimalField(
+        max_digits=12,
+        decimal_places=4,
         default=0,
         verbose_name='Stock',
-        help_text='Cantidad actual disponible (unidades/paquetes, entero)'
+        help_text='Cantidad actual disponible'
     )
     
     # stock_minimo: alerta cuando se debe pedir mas

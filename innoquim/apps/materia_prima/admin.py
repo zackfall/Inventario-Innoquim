@@ -37,7 +37,7 @@ class MateriaPrimaAdmin(admin.ModelAdmin):
             'fields': ('nombre', 'descripcion', 'categoria_id', 'unidad_id')
         }),
         ('Propiedades', {
-            'fields': ('densidad', 'stock_minimo', 'stock_maximo', 'costo_promedio')
+            'fields': ('densidad',)
         }),
         ('Control de Stock', {
             'fields': ('stock', 'stock_minimo', 'stock_maximo', 'costo_promedio')

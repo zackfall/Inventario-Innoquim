@@ -13,6 +13,8 @@ import uuid
 from datetime import datetime
 from dotenv import load_dotenv
 
+from googleapiclient.errors import HttpError
+
 from google_drive_service import GoogleDriveService
 
 # Cargar variables de entorno
@@ -221,6 +223,16 @@ async def get_file_info(file_id: str):
             url_vista=file_info.get('webViewLink')
         )
     
+    except HttpError as e:
+        if e.resp.status == 404:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Archivo no encontrado: {file_id}"
+            )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al obtener información: {str(e)}"
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -256,6 +268,17 @@ async def delete_file(file_id: str):
             google_drive_id=file_id
         )
     
+    except ValueError as e:
+        # Archivo no encontrado en Google Drive
+        if "no encontrado" in str(e).lower():
+            raise HTTPException(
+                status_code=404,
+                detail=f"Archivo no encontrado: {file_id}"
+            )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error al eliminar archivo: {str(e)}"
+        )
     except HTTPException:
         raise
     except Exception as e:

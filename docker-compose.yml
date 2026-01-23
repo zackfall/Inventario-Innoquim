@@ -199,3 +199,10 @@ volumes:
   postgres_replica_data:
   redis_data:
   file-manager-temp:
+
+# ===========================================================================
+# NETWORKS
+# ===========================================================================
+networks:
+  innoquim-network:
+    driver: bridge
