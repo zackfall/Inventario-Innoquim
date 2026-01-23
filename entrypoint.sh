@@ -8,7 +8,7 @@ done
 echo "PostgreSQL está listo!"
 
 echo "Ejecutando migraciones..."
-python manage.py migrate materia_prima 0001
+# python manage.py migrate materia_prima 0001
 python manage.py migrate
 
 echo "Recopilando archivos estáticos..."

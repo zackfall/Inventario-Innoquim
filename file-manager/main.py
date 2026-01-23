@@ -3,17 +3,18 @@ API REST para el gestor de archivos con Google Drive.
 Servicio independiente que maneja únicamente la interacción con Google Drive.
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Form
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional
 import os
 import uuid
 from datetime import datetime
-from dotenv import load_dotenv
+from typing import Optional
 
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+from google_auth_oauthlib.flow import Flow
 from google_drive_service import GoogleDriveService
+from pydantic import BaseModel
 
 # Cargar variables de entorno
 load_dotenv()
@@ -22,40 +23,59 @@ load_dotenv()
 app = FastAPI(
     title="Innoquim File Manager Service",
     description="Servicio de gestión de archivos con Google Drive",
-    version="2.0.0"
+    version="2.0.0",
 )
 
-# Configurar CORS - permitir acceso desde el backend Django
+# ✅ CONFIGURAR CORS CORRECTAMENTE
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # En producción, especificar dominios permitidos
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "*",
+    ],  # Ajustar según tu frontend
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # Configuración de Google Drive
-CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', '/app/credentials/google-drive-credentials.json')
-TOKEN_PATH = os.getenv('GOOGLE_TOKEN_PATH', '/app/credentials/token.json')
-FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
+CREDENTIALS_PATH = os.getenv(
+    "GOOGLE_CREDENTIALS_PATH", "/app/credentials/google-drive-credentials.json"
+)
+TOKEN_PATH = os.getenv("GOOGLE_TOKEN_PATH", "/app/credentials/token.json")
+FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID")
 
 if not FOLDER_ID:
     raise ValueError("GOOGLE_DRIVE_FOLDER_ID no está configurado")
 
-# Inicializar servicio de Google Drive
-drive_service = GoogleDriveService(CREDENTIALS_PATH, TOKEN_PATH, FOLDER_ID)
-
 # Carpeta temporal
 TEMP_DIR = "/app/temp_uploads"
 os.makedirs(TEMP_DIR, exist_ok=True)
+
+# 🔥 NUEVO: Variable global para almacenar el flow durante la autenticación
+oauth_flows = {}
+
+# Inicializar el servicio de Google Drive
+try:
+    drive_service = GoogleDriveService(
+        credentials_path=CREDENTIALS_PATH,
+        token_path=TOKEN_PATH,
+        folder_id=FOLDER_ID
+    )
+except Exception as e:
+    print(f"Error inicializando Google Drive Service: {e}")
+    drive_service = None
 
 
 # =================================================================
 # MODELOS DE DATOS
 # =================================================================
 
+
 class UploadResponse(BaseModel):
     """Modelo de respuesta al subir un archivo"""
+
     google_drive_id: str
     nombre: str
     url_descarga: str
@@ -67,6 +87,7 @@ class UploadResponse(BaseModel):
 
 class FileInfo(BaseModel):
     """Modelo de información de archivo"""
+
     id: str
     nombre: str
     tamaño: Optional[int] = None
@@ -78,14 +99,140 @@ class FileInfo(BaseModel):
 
 class DeleteResponse(BaseModel):
     """Modelo de respuesta al eliminar"""
+
     success: bool
     message: str
     google_drive_id: str
 
 
+class AuthCallbackRequest(BaseModel):
+    """Modelo para el callback de autenticación"""
+
+    code: str
+    state: str
+
+
 # =================================================================
-# ENDPOINTS
+# ENDPOINTS DE AUTENTICACIÓN
 # =================================================================
+
+
+@app.get("/api/auth/url")
+async def get_auth_url():
+    """
+    Obtener URL de autenticación de Google OAuth 2.0
+    """
+    try:
+        # Verificar que existe el archivo de credenciales
+        if not os.path.exists(CREDENTIALS_PATH):
+            raise HTTPException(
+                status_code=500,
+                detail=f"Archivo de credenciales no encontrado: {CREDENTIALS_PATH}",
+            )
+
+        # Crear flow de OAuth
+        flow = Flow.from_client_secrets_file(
+            CREDENTIALS_PATH,
+            scopes=GoogleDriveService.SCOPES,
+            redirect_uri="http://localhost:8001/api/auth/callback",  # Callback URL
+        )
+
+        # Generar URL de autorización
+        auth_url, state = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes="true",
+            prompt="consent",  # Forzar pantalla de consentimiento
+        )
+
+        # Guardar el flow para usarlo después
+        oauth_flows[state] = flow
+        
+        # 🔥 DEBUG: Imprimir state para depuración
+        print(f"🔥 Generated state: {state}")
+        print(f"🔥 Active states: {list(oauth_flows.keys())}")
+
+        return {"auth_url": auth_url, "state": state}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error al generar URL de autenticación: {str(e)}"
+        )
+
+
+@app.get("/api/auth/callback")
+async def auth_callback_get(code: str = "", state: str = "", error: str = ""):
+    """
+    Manejar el callback GET de Google OAuth (redirect)
+    """
+    if error:
+        raise HTTPException(status_code=400, detail=f"Error de autenticación: {error}")
+
+    if not code or not state:
+        raise HTTPException(
+            status_code=400, detail="Faltan parámetros de autenticación"
+        )
+
+    # Redirigir al frontend con los parámetros
+    frontend_url = f"http://localhost:5173/auth/callback?code={code}&state={state}"
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=frontend_url, status_code=302)
+
+
+@app.post("/api/auth/callback")
+async def auth_callback(request: AuthCallbackRequest):
+    """
+    Procesar el callback de autenticación de Google
+    """
+    try:
+        code = request.code
+        state = request.state
+        
+        # 🔥 DEBUG: Imprimir state recibido para depuración
+        print(f"🔥 Received state: {state}")
+        print(f"🔥 Active states: {list(oauth_flows.keys())}")
+
+        # Recuperar el flow guardado
+        flow = oauth_flows.get(state)
+        if not flow:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"State inválido o expirado. State recibido: {state}, States disponibles: {list(oauth_flows.keys())}"
+            )
+
+        # Intercambiar el código por credenciales
+        flow.fetch_token(code=code)
+        credentials = flow.credentials
+
+        # Guardar las credenciales en token.json
+        with open(TOKEN_PATH, "w") as token_file:
+            token_file.write(credentials.to_json())
+
+        # Limpiar el flow usado
+        del oauth_flows[state]
+
+        # 🔥 DEBUG: Reinicializar el servicio para que cargue las nuevas credenciales
+        global drive_service
+        try:
+            drive_service = GoogleDriveService(
+                credentials_path=CREDENTIALS_PATH,
+                token_path=TOKEN_PATH,
+                folder_id=FOLDER_ID or ""
+            )
+            print(f"🔥 Google Drive Service reinicializado exitosamente")
+        except Exception as e:
+            print(f"🔥 Error reinicializando Google Drive Service: {e}")
+
+        return {
+            "success": True,
+            "message": "Autenticación exitosa",
+            "access_token": credentials.token,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Error en callback de autenticación: {str(e)}"
+        )
+
 
 @app.get("/")
 async def root():
@@ -94,7 +241,7 @@ async def root():
         "service": "Innoquim File Manager",
         "status": "running",
         "version": "2.0.0",
-        "description": "Servicio de gestión de archivos con Google Drive"
+        "description": "Servicio de gestión de archivos con Google Drive",
     }
 
 
@@ -105,128 +252,126 @@ async def health_check():
         # Verificar que las credenciales existan
         credentials_exist = os.path.exists(CREDENTIALS_PATH)
         token_exist = os.path.exists(TOKEN_PATH)
-        
+
         return {
             "status": "healthy",
             "credentials_configured": credentials_exist,
             "token_configured": token_exist,
-            "google_drive_folder_id": FOLDER_ID[:10] + "..." if FOLDER_ID else None
+            "google_drive_folder_id": FOLDER_ID[:10] + "..." if FOLDER_ID else None,
         }
     except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e)
-        }
+        return {"status": "unhealthy", "error": str(e)}
 
 
 @app.post("/api/upload", response_model=UploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     """
     Sube un archivo a Google Drive.
-    
+
     Args:
         file: Archivo a subir
-    
+
     Returns:
         Información del archivo subido en Google Drive
     """
+    if not drive_service:
+        raise HTTPException(status_code=500, detail="Servicio de Google Drive no inicializado")
+        
+    temp_path = None
     try:
         # Validar tamaño máximo (50 MB)
         max_size = 50 * 1024 * 1024
         file.file.seek(0, 2)  # Ir al final del archivo
         file_size = file.file.tell()
         file.file.seek(0)  # Volver al inicio
-        
+
         if file_size > max_size:
             raise HTTPException(
-                status_code=400,
-                detail=f"Archivo muy grande. Máximo permitido: 50 MB"
+                status_code=400, detail="Archivo muy grande. Máximo permitido: 50 MB"
             )
-        
+
         # Crear nombre temporal único
-        file_extension = os.path.splitext(file.filename)[1]
+        file_extension = os.path.splitext(file.filename or "")[1]
         temp_filename = f"{uuid.uuid4()}{file_extension}"
         temp_path = os.path.join(TEMP_DIR, temp_filename)
-        
+
         # Guardar archivo temporalmente
         with open(temp_path, "wb") as buffer:
             content = await file.read()
             buffer.write(content)
-        
+
         # Determinar MIME type
         mime_types = {
-            '.pdf': 'application/pdf',
-            '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            '.xls': 'application/vnd.ms-excel',
-            '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            '.doc': 'application/msword',
-            '.csv': 'text/csv',
+            ".pdf": "application/pdf",
+            ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            ".xls": "application/vnd.ms-excel",
+            ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".doc": "application/msword",
+            ".csv": "text/csv",
         }
-        mime_type = mime_types.get(file_extension.lower(), 'application/octet-stream')
-        
+        mime_type = mime_types.get(file_extension.lower(), "application/octet-stream")
+
         # Subir a Google Drive
-        result = drive_service.upload_file(temp_path, file.filename)
-        
+        result = drive_service.upload_file(temp_path, file.filename or "archivo")
+
         # Eliminar archivo temporal
         os.remove(temp_path)
-        
+
         return UploadResponse(
-            google_drive_id=result['id'],
-            nombre=file.filename,
-            url_descarga=result['webContentLink'],
-            url_vista=result['webViewLink'],
+            google_drive_id=result["id"],
+            nombre=file.filename or "archivo",
+            url_descarga=result["webContentLink"],
+            url_vista=result["webViewLink"],
             tamaño=file_size,
             mime_type=mime_type,
-            fecha_subida=datetime.now().isoformat()
+            fecha_subida=datetime.now().isoformat(),
         )
-    
+
     except Exception as e:
         # Limpiar archivo temporal en caso de error
-        if os.path.exists(temp_path):
+        if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error al subir archivo: {str(e)}"
-        )
+
+        raise HTTPException(status_code=500, detail=f"Error al subir archivo: {str(e)}")
 
 
 @app.get("/api/files/{file_id}/info", response_model=FileInfo)
 async def get_file_info(file_id: str):
     """
     Obtiene información de un archivo de Google Drive.
-    
+
     Args:
         file_id: ID del archivo en Google Drive
-    
+
     Returns:
         Información del archivo
     """
+    if not drive_service:
+        raise HTTPException(status_code=500, detail="Servicio de Google Drive no inicializado")
+        
     try:
         file_info = drive_service.get_file_info(file_id)
-        
+
         if not file_info:
             raise HTTPException(
-                status_code=404,
-                detail="Archivo no encontrado en Google Drive"
+                status_code=404, detail="Archivo no encontrado en Google Drive"
             )
-        
+
         return FileInfo(
-            id=file_info.get('id'),
-            nombre=file_info.get('name'),
-            tamaño=int(file_info.get('size', 0)),
-            mime_type=file_info.get('mimeType'),
-            fecha_creacion=file_info.get('createdTime'),
-            url_descarga=file_info.get('webContentLink'),
-            url_vista=file_info.get('webViewLink')
+            id=file_info.get("id") or file_id,
+            nombre=file_info.get("name") or "desconocido",
+            tamaño=int(file_info.get("size", 0)),
+            mime_type=file_info.get("mimeType"),
+            fecha_creacion=file_info.get("createdTime"),
+            url_descarga=file_info.get("webContentLink"),
+            url_vista=file_info.get("webViewLink"),
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Error al obtener información: {str(e)}"
+            status_code=500, detail=f"Error al obtener información: {str(e)}"
         )
 
 
@@ -234,34 +379,35 @@ async def get_file_info(file_id: str):
 async def delete_file(file_id: str):
     """
     Elimina un archivo de Google Drive.
-    
+
     Args:
         file_id: ID del archivo en Google Drive
-    
+
     Returns:
         Confirmación de eliminación
     """
+    if not drive_service:
+        raise HTTPException(status_code=500, detail="Servicio de Google Drive no inicializado")
+        
     try:
         success = drive_service.delete_file(file_id)
-        
+
         if not success:
             raise HTTPException(
-                status_code=404,
-                detail="Archivo no encontrado o no se pudo eliminar"
+                status_code=404, detail="Archivo no encontrado o no se pudo eliminar"
             )
-        
+
         return DeleteResponse(
             success=True,
             message="Archivo eliminado exitosamente de Google Drive",
-            google_drive_id=file_id
+            google_drive_id=file_id,
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Error al eliminar archivo: {str(e)}"
+            status_code=500, detail=f"Error al eliminar archivo: {str(e)}"
         )
 
 
@@ -269,34 +415,37 @@ async def delete_file(file_id: str):
 async def list_files():
     """
     Lista todos los archivos de la carpeta en Google Drive.
-    
+
     Returns:
         Lista de archivos
     """
+    if not drive_service:
+        raise HTTPException(status_code=500, detail="Servicio de Google Drive no inicializado")
+        
     try:
         files = drive_service.list_files()
-        
+
         return {
             "total": len(files),
             "archivos": [
                 FileInfo(
-                    id=f['id'],
-                    nombre=f['name'],
-                    tamaño=int(f.get('size', 0)),
-                    fecha_creacion=f.get('createdTime'),
-                    url_vista=f.get('webViewLink')
+                    id=f["id"],
+                    nombre=f["name"],
+                    tamaño=int(f.get("size", 0)),
+                    fecha_creacion=f.get("createdTime"),
+                    url_vista=f.get("webViewLink"),
                 )
                 for f in files
-            ]
+            ],
         }
-    
+
     except Exception as e:
         raise HTTPException(
-            status_code=500,
-            detail=f"Error al listar archivos: {str(e)}"
+            status_code=500, detail=f"Error al listar archivos: {str(e)}"
         )
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+
+    uvicorn.run(app, host="0.0.0.0", port=8002)
