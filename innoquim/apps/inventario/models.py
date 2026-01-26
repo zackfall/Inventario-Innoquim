@@ -2,6 +2,7 @@ from django.contrib.contenttypes.fields import GenericForeignKey
 from django.contrib.contenttypes.models import ContentType
 from django.contrib.contenttypes.fields import GenericForeignKey
 from django.db import models
+from django.utils import timezone
 from decimal import Decimal, ROUND_HALF_UP
 
 
@@ -295,3 +296,135 @@ class Kardex(models.Model):
                 "costo_total": Decimal("0.00"),
                 "costo_promedio": Decimal("0.0000"),
             }
+
+
+class AjusteInventario(models.Model):
+    """
+    Modelo para registrar ajustes manuales de inventario.
+    Usado cuando hay diferencias físicas vs sistema, mermas, etc.
+    """
+
+    TIPO_AJUSTE = (
+        ("POSITIVO", "Ajuste Positivo (+ añadir)"),
+        ("NEGATIVO", "Ajuste Negativo (- quitar)"),
+    )
+
+    fecha = models.DateTimeField(default=timezone.now, verbose_name="Fecha del Ajuste")
+    almacen = models.ForeignKey("almacen.Almacen", on_delete=models.PROTECT, verbose_name="Almacén")
+
+    # Item a ajustar (MateriaPrima o Producto)
+    content_type = models.ForeignKey(ContentType, on_delete=models.PROTECT,
+                                   limit_choices_to={"model__in": ("materiaprima", "producto")})
+    object_id = models.CharField(max_length=8)
+    item = GenericForeignKey("content_type", "object_id")
+
+    tipo_ajuste = models.CharField(max_length=10, choices=TIPO_AJUSTE, verbose_name="Tipo de Ajuste")
+    cantidad = models.DecimalField(max_digits=12, decimal_places=4, verbose_name="Cantidad Ajustada")
+    costo_unitario = models.DecimalField(max_digits=12, decimal_places=4, verbose_name="Costo Unitario")
+
+    motivo = models.TextField(verbose_name="Motivo del Ajuste", help_text="Explicación del ajuste")
+    responsable = models.ForeignKey("usuario.Usuario", on_delete=models.PROTECT, verbose_name="Responsable")
+
+    # Auditoría
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Ajuste de Inventario"
+        verbose_name_plural = "Ajustes de Inventario"
+        ordering = ["-fecha"]
+
+    def __str__(self):
+        return f"Ajuste {self.tipo_ajuste} - {self.item} - {self.cantidad}"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+
+        # Registrar en Kardex
+        tipo_movimiento = "ENTRADA" if self.tipo_ajuste == "POSITIVO" else "SALIDA"
+        motivo = "AJUSTE"
+
+        Kardex.registrar_movimiento(
+            almacen=self.almacen,
+            item=self.item,
+            tipo_movimiento=tipo_movimiento,
+            motivo=motivo,
+            cantidad=self.cantidad,
+            costo_unitario=self.costo_unitario,
+            referencia_id=f"AJUSTE{self.id}",
+            observaciones=f"Ajuste manual: {self.motivo}",
+            usuario=self.responsable,
+        )
+
+
+class Devolucion(models.Model):
+    """
+    Modelo para registrar devoluciones de productos vendidos.
+    """
+
+    fecha = models.DateTimeField(default=timezone.now, verbose_name="Fecha de Devolución")
+    almacen = models.ForeignKey("almacen.Almacen", on_delete=models.PROTECT, verbose_name="Almacén")
+
+    # Orden original (opcional, para trazabilidad)
+    orden_original = models.ForeignKey(
+        "orden_cliente.OrdenCliente",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        verbose_name="Orden Original"
+    )
+
+    # Producto devuelto
+    producto = models.ForeignKey("producto.Producto", on_delete=models.PROTECT, verbose_name="Producto")
+    cantidad = models.PositiveIntegerField(verbose_name="Cantidad Devuelta")
+
+    # Información financiera
+    precio_unitario = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Precio Unitario")
+    total = models.DecimalField(max_digits=12, decimal_places=2, verbose_name="Total Devolución")
+
+    motivo = models.TextField(verbose_name="Motivo de Devolución")
+    cliente = models.ForeignKey("cliente.Cliente", on_delete=models.PROTECT, verbose_name="Cliente")
+
+    # Estado de la devolución
+    ESTADO_CHOICES = (
+        ("PENDIENTE", "Pendiente de Procesamiento"),
+        ("APROBADA", "Aprobada"),
+        ("RECHAZADA", "Rechazada"),
+        ("PROCESADA", "Procesada"),
+    )
+    estado = models.CharField(max_length=15, choices=ESTADO_CHOICES, default="PENDIENTE")
+
+    responsable = models.ForeignKey("usuario.Usuario", on_delete=models.PROTECT, verbose_name="Responsable")
+
+    # Auditoría
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Devolución"
+        verbose_name_plural = "Devoluciones"
+        ordering = ["-fecha"]
+
+    def __str__(self):
+        return f"Devolución {self.producto.name} - {self.cantidad} unidades"
+
+    def save(self, *args, **kwargs):
+        # Calcular total si no está establecido
+        if not self.total and self.cantidad and self.precio_unitario:
+            self.total = self.cantidad * self.precio_unitario
+
+        super().save(*args, **kwargs)
+
+        # Solo registrar en Kardex si está procesada
+        if self.estado == "PROCESADA":
+            Kardex.registrar_movimiento(
+                almacen=self.almacen,
+                item=self.producto,
+                tipo_movimiento="ENTRADA",
+                motivo="DEVOLUCION",
+                cantidad=Decimal(str(self.cantidad)),
+                costo_unitario=self.precio_unitario,
+                referencia_id=f"DEV{self.id}",
+                observaciones=f"Devolución de orden {self.orden_original.order_code if self.orden_original else 'N/A'}: {self.motivo}",
+                usuario=self.responsable,
+            )

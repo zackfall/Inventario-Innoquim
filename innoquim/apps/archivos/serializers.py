@@ -95,9 +95,9 @@ class ArchivoUploadSerializer(serializers.Serializer):
         help_text='Archivo a subir (PDF, Excel, Word, etc.)'
     )
     
-    tipo_reporte = serializers.ChoiceField(
-        choices=Archivo.TIPO_REPORTE_CHOICES,
+    tipo_reporte = serializers.CharField(
         required=True,
+        max_length=30,
         help_text='Tipo de reporte'
     )
     

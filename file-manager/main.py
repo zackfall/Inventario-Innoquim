@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
+from googleapiclient.errors import HttpError
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import RedirectResponse
@@ -59,9 +60,7 @@ oauth_flows = {}
 # Inicializar el servicio de Google Drive
 try:
     drive_service = GoogleDriveService(
-        credentials_path=CREDENTIALS_PATH,
-        token_path=TOKEN_PATH,
-        folder_id=FOLDER_ID
+        credentials_path=CREDENTIALS_PATH, token_path=TOKEN_PATH, folder_id=FOLDER_ID
     )
 except Exception as e:
     print(f"Error inicializando Google Drive Service: {e}")
@@ -146,7 +145,7 @@ async def get_auth_url():
 
         # Guardar el flow para usarlo después
         oauth_flows[state] = flow
-        
+
         # 🔥 DEBUG: Imprimir state para depuración
         print(f"🔥 Generated state: {state}")
         print(f"🔥 Active states: {list(oauth_flows.keys())}")
@@ -174,7 +173,6 @@ async def auth_callback_get(code: str = "", state: str = "", error: str = ""):
 
     # Redirigir al frontend con los parámetros
     frontend_url = f"http://localhost:5173/auth/callback?code={code}&state={state}"
-    from fastapi.responses import RedirectResponse
     return RedirectResponse(url=frontend_url, status_code=302)
 
 
@@ -186,7 +184,7 @@ async def auth_callback(request: AuthCallbackRequest):
     try:
         code = request.code
         state = request.state
-        
+
         # 🔥 DEBUG: Imprimir state recibido para depuración
         print(f"🔥 Received state: {state}")
         print(f"🔥 Active states: {list(oauth_flows.keys())}")
@@ -195,8 +193,8 @@ async def auth_callback(request: AuthCallbackRequest):
         flow = oauth_flows.get(state)
         if not flow:
             raise HTTPException(
-                status_code=400, 
-                detail=f"State inválido o expirado. State recibido: {state}, States disponibles: {list(oauth_flows.keys())}"
+                status_code=400,
+                detail=f"State inválido o expirado. State recibido: {state}, States disponibles: {list(oauth_flows.keys())}",
             )
 
         # Intercambiar el código por credenciales
@@ -216,9 +214,9 @@ async def auth_callback(request: AuthCallbackRequest):
             drive_service = GoogleDriveService(
                 credentials_path=CREDENTIALS_PATH,
                 token_path=TOKEN_PATH,
-                folder_id=FOLDER_ID or ""
+                folder_id=FOLDER_ID or "",
             )
-            print(f"🔥 Google Drive Service reinicializado exitosamente")
+            print("🔥 Google Drive Service reinicializado exitosamente")
         except Exception as e:
             print(f"🔥 Error reinicializando Google Drive Service: {e}")
 
@@ -275,8 +273,10 @@ async def upload_file(file: UploadFile = File(...)):
         Información del archivo subido en Google Drive
     """
     if not drive_service:
-        raise HTTPException(status_code=500, detail="Servicio de Google Drive no inicializado")
-        
+        raise HTTPException(
+            status_code=500, detail="Servicio de Google Drive no inicializado"
+        )
+
     temp_path = None
     try:
         # Validar tamaño máximo (50 MB)
@@ -347,8 +347,10 @@ async def get_file_info(file_id: str):
         Información del archivo
     """
     if not drive_service:
-        raise HTTPException(status_code=500, detail="Servicio de Google Drive no inicializado")
-        
+        raise HTTPException(
+            status_code=500, detail="Servicio de Google Drive no inicializado"
+        )
+
     try:
         file_info = drive_service.get_file_info(file_id)
 
@@ -366,7 +368,14 @@ async def get_file_info(file_id: str):
             url_descarga=file_info.get("webContentLink"),
             url_vista=file_info.get("webViewLink"),
         )
-
+    except HttpError as e:
+        if e.resp.status == 404:
+            raise HTTPException(
+                status_code=404, detail=f"Archivo no encontrado: {file_id}"
+            )
+        raise HTTPException(
+            status_code=500, detail=f"Error al obtener información: {str(e)}"
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -387,8 +396,10 @@ async def delete_file(file_id: str):
         Confirmación de eliminación
     """
     if not drive_service:
-        raise HTTPException(status_code=500, detail="Servicio de Google Drive no inicializado")
-        
+        raise HTTPException(
+            status_code=500, detail="Servicio de Google Drive no inicializado"
+        )
+
     try:
         success = drive_service.delete_file(file_id)
 
@@ -402,7 +413,15 @@ async def delete_file(file_id: str):
             message="Archivo eliminado exitosamente de Google Drive",
             google_drive_id=file_id,
         )
-
+    except ValueError as e:
+        # Archivo no encontrado en Google Drive
+        if "no encontrado" in str(e).lower():
+            raise HTTPException(
+                status_code=404, detail=f"Archivo no encontrado: {file_id}"
+            )
+        raise HTTPException(
+            status_code=500, detail=f"Error al eliminar archivo: {str(e)}"
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -420,8 +439,10 @@ async def list_files():
         Lista de archivos
     """
     if not drive_service:
-        raise HTTPException(status_code=500, detail="Servicio de Google Drive no inicializado")
-        
+        raise HTTPException(
+            status_code=500, detail="Servicio de Google Drive no inicializado"
+        )
+
     try:
         files = drive_service.list_files()
 

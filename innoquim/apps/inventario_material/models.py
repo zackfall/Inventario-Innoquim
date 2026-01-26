@@ -10,12 +10,10 @@ class InventarioMaterial(models.Model):
     """
     Control de cantidades actuales por ítem y almacén (genérico).
     Representa el stock disponible en cada ubicación para materias primas y productos.
-
     Relaciones:
     - content_type + object_id: QUÉ ítem es (MateriaPrima o Producto)
     - almacen_id: DÓNDE está guardado
     - unidad_id: EN QUÉ se mide (kg, litros, etc)
-
     Notas:
     - Este modelo refleja el stock ACTUAL por combinación (ítem, almacén)
     - El historial de movimientos y costos está en el modelo Kardex (app inventario)
@@ -41,7 +39,6 @@ class InventarioMaterial(models.Model):
     # =================================================================
     # RELACIONES (FOREIGN KEYS)
     # =================================================================
-
     # Ítem genérico (MateriaPrima o Producto)
     content_type = models.ForeignKey(
         ContentType,
@@ -173,4 +170,3 @@ class InventarioMaterial(models.Model):
 
         # Llamar al save() original de Django
         super().save(*args, **kwargs)
-

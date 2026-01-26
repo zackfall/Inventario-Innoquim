@@ -4,6 +4,7 @@ Signals para actualizar stock automáticamente al completar/cancelar lotes
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.utils import timezone
+from decimal import Decimal
 from .models import LoteProduccion
 from innoquim.apps.producto.models import Producto
 from innoquim.apps.materia_prima.models import MateriaPrima
@@ -37,6 +38,19 @@ def actualizar_stocks_al_cambiar_estado(sender, instance, created, **kwargs):
             producto.stock += int(instance.produced_quantity)
             producto.save()
             
+            # Registrar entrada del producto terminado en Kardex
+            Kardex.registrar_movimiento(
+                almacen=almacen,
+                item=producto,
+                tipo_movimiento="ENTRADA",
+                motivo="PRODUCCION",
+                cantidad=Decimal(str(instance.produced_quantity)),
+                costo_unitario=producto.costo_unitario or 0,
+                referencia_id=str(instance.id),
+                observaciones=f"Producto terminado del lote {instance.batch_code}",
+                usuario=None,
+            )
+            
             # 2. Obtener el almacén (primera opción o predeterminado)
             almacen = Almacen.objects.first()
             if not almacen:
@@ -50,24 +64,17 @@ def actualizar_stocks_al_cambiar_estado(sender, instance, created, **kwargs):
                 materia_prima.save()
                 
                 # Crear registro en Kardex (salida de materia prima)
-                try:
-                    Kardex.objects.create(
-                        almacen=almacen,
-                        content_type=ContentType.objects.get_for_model(MateriaPrima),
-                        object_id=str(materia_prima.id),
-                        tipo_movimiento="SALIDA",
-                        motivo="PRODUCCION",
-                        cantidad=material.used_quantity,
-                        costo_unitario=materia_prima.precio_unitario or 0,
-                        costo_total=(material.used_quantity * (materia_prima.precio_unitario or 0)),
-                        saldo_cantidad=materia_prima.stock_actual,
-                        saldo_costo_total=0,
-                        saldo_costo_promedio=0,
-                        referencia_id=str(instance.id),
-                        observaciones=f"Material usado en lote {instance.batch_code}",
-                    )
-                except Exception as kardex_error:
-                    print(f"Error al crear registro Kardex: {str(kardex_error)}")
+                Kardex.registrar_movimiento(
+                    almacen=almacen,
+                    item=materia_prima,
+                    tipo_movimiento="SALIDA",
+                    motivo="PRODUCCION",
+                    cantidad=material.used_quantity,
+                    costo_unitario=materia_prima.precio_unitario or 0,
+                    referencia_id=str(instance.id),
+                    observaciones=f"Material usado en lote {instance.batch_code}",
+                    usuario=None,
+                )
             
         except Exception as e:
             print(f"Error al actualizar stocks del lote {instance.batch_code}: {str(e)}")
