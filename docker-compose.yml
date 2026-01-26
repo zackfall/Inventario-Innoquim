@@ -1,6 +1,3 @@
-version: '3.8'
-
-
 services:
   # ===================================================================
   # BASE DE DATOS - PostgreSQL
@@ -121,8 +118,6 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    networks:
-      - innoquim-network
     command: redis-server --appendonly yes
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -199,10 +194,3 @@ volumes:
   postgres_replica_data:
   redis_data:
   file-manager-temp:
-
-# ===========================================================================
-# NETWORKS
-# ===========================================================================
-networks:
-  innoquim-network:
-    driver: bridge
