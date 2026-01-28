@@ -1,6 +1,3 @@
-version: '3.8'
-
-
 services:
   # ===================================================================
   # BASE DE DATOS - PostgreSQL
@@ -139,7 +136,7 @@ services:
       dockerfile: Dockerfile
     container_name: innoquim-backend
     restart: unless-stopped
-    entrypoint: /app/entrypoint.sh
+    entrypoint: /usr/local/bin/entrypoint.sh
     command: gunicorn innoquim.wsgi:application --bind 0.0.0.0:8000
     volumes:
       - .:/app
