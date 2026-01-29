@@ -12,6 +12,7 @@ class OrdenItemSerializer(serializers.ModelSerializer):
     # Evita hacer peticiones extra para obtener los nombres
     product_name = serializers.CharField(source="product.name", read_only=True)
     unit_name = serializers.CharField(source="unit.name", read_only=True)
+    unit_price = serializers.DecimalField(source="product.price", read_only=True, max_digits=10, decimal_places=2)
 
     # Validacion de quantity: minimo 1 envase
     quantity = serializers.IntegerField(min_value=1)
@@ -26,6 +27,7 @@ class OrdenItemSerializer(serializers.ModelSerializer):
             "quantity",
             "unit",
             "unit_name",  # Campo extra para lectura
+            "unit_price",  # Campo extra para lectura
             "subtotal",  # Calculado automaticamente
             "created_at",
             "updated_at",
